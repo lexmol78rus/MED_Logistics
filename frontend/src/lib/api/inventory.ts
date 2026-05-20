@@ -1,0 +1,71 @@
+import type { WriteoffRecommendation } from '../../types/api';
+import { apiFetch, buildQuery } from './client';
+
+export type InventoryBalanceRow = {
+  productId: string;
+  productSku: string;
+  productName: string;
+  lotId: string;
+  lotNumber: string;
+  lotStatus: string;
+  expiryDate: string | null;
+  location: string | null;
+  totalQuantity: number;
+  availableQuantity: number;
+  blockedQuantity: number;
+  quarantinedQuantity: number;
+  expiredQuantity: number;
+  reservedQuantity: number;
+  minStock: number | null;
+  reorderPoint: number | null;
+};
+
+export type ReceivePayload = {
+  barcode?: string;
+  productId?: string;
+  lotNumber: string;
+  expiryDate: string;
+  quantity: number;
+  location?: string;
+};
+
+export type WriteoffPayload = {
+  productId: string;
+  lines: { lotId: string; quantity: number }[];
+};
+
+export function fetchInventoryBalance(params?: {
+  productId?: string;
+  lotId?: string;
+  status?: string;
+  location?: string;
+  page?: number;
+  pageSize?: number;
+}) {
+  return apiFetch<{
+    items: InventoryBalanceRow[];
+    total: number;
+    page: number;
+    pageSize: number;
+  }>(`/inventory/balance${buildQuery(params ?? {})}`);
+}
+
+export function receiveInventory(payload: ReceivePayload) {
+  return apiFetch<{ success: boolean; lotId: string; movementId: string }>(
+    '/inventory/receive',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+export function fetchWriteoffRecommendation(params: { productId?: string; q?: string }) {
+  return apiFetch<WriteoffRecommendation>(
+    `/inventory/writeoff/recommendation${buildQuery(params)}`,
+  );
+}
+
+export function writeoffInventory(payload: WriteoffPayload) {
+  return apiFetch<{ success: boolean; movementIds: string[] }>(
+    '/inventory/writeoff',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}

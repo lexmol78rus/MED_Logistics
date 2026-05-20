@@ -1,46 +1,107 @@
 import { useState, useRef, useEffect } from 'react';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { ScanLine, CheckCircle2, ArrowDownToLine, Keyboard, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { processScanner } from '../lib/api/scanner';
+import { receiveInventory } from '../lib/api/inventory';
+import { ApiError } from '../lib/api/client';
+
+type ScannedProduct = {
+  id: string;
+  name: string;
+  ref: string;
+  manufacturer: string | null;
+  barcode: string;
+};
 
 export default function Receiving() {
   const [barcode, setBarcode] = useState('');
-  const [scannedProduct, setScannedProduct] = useState<any>(null);
+  const [scannedProduct, setScannedProduct] = useState<ScannedProduct | null>(null);
   const [lot, setLot] = useState('');
   const [expiry, setExpiry] = useState('');
   const [qty, setQty] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [scanning, setScanning] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
 
-  const handleScan = (e: React.FormEvent) => {
+  const handleScan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!barcode) return;
-    
-    if (barcode === '088421000') {
-      setScannedProduct({ name: 'Маски хирургические L3', ref: 'REF-8842', manufacturer: 'МедТех Плюс' });
+    if (!barcode.trim()) return;
+
+    setScanning(true);
+    try {
+      const result = await processScanner(barcode.trim());
+      if (!result.found || !result.product) {
+        toast.error('Неизвестный штрихкод. Заведите карточку в справочнике.');
+        setScannedProduct(null);
+        return;
+      }
+      setScannedProduct({
+        id: result.product.id,
+        name: result.product.name,
+        ref: result.product.ref,
+        manufacturer: result.product.manufacturer,
+        barcode: result.product.barcode,
+      });
       toast.success('Товар идентифицирован в базе.');
-    } else {
-      toast.error('Неизвестный штрихкод. Заведите карточку в справочнике.');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка сканирования');
+    } finally {
+      setScanning(false);
     }
   };
 
-  const handleConfirm = () => {
-    if (!lot || !expiry || !qty) {
-      toast.error('Заполните обязательные атрибуты партии: ПАРТИЯ, СРОК, КОЛ-ВО.');
+  const handleConfirm = async () => {
+    if (!scannedProduct || !lot || !expiry || !qty) {
+      toast.error('Заполните обязательные атрибуты партии: LOT / Партия, срок, кол-во.');
       return;
     }
-    toast.success('ТМЦ успешно оприходованы на склад.');
-    
-    setBarcode('');
-    setScannedProduct(null);
-    setLot('');
-    setExpiry('');
-    setQty('');
-    setTimeout(() => inputRef.current?.focus(), 100);
+
+    const quantity = Number(qty);
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      toast.error('Укажите корректное количество');
+      return;
+    }
+
+    const expiryDate = new Date(expiry);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (expiryDate < today) {
+      toast.error('Срок годности не может быть в прошлом');
+      return;
+    }
+
+    if (!lot.trim()) {
+      toast.error('Укажите номер партии (LOT)');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await receiveInventory({
+        barcode: scannedProduct.barcode,
+        productId: scannedProduct.id,
+        lotNumber: lot.trim(),
+        expiryDate: expiry,
+        quantity,
+      });
+      toast.success('ТМЦ успешно оприходованы на склад.');
+
+      setBarcode('');
+      setScannedProduct(null);
+      setLot('');
+      setExpiry('');
+      setQty('');
+      setTimeout(() => inputRef.current?.focus(), 100);
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка оприходования');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -56,14 +117,14 @@ export default function Receiving() {
       <div className="grid gap-6">
         <div className="bg-white border-2 border-blue-200 rounded-md shadow-md relative overflow-hidden flex flex-col">
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-blue-50/50 to-transparent pointer-events-none" />
-          
+
           <div className="p-4 border-b border-blue-100 flex items-center bg-blue-50/30">
             <ScanLine className="w-4 h-4 mr-2 text-blue-600 animate-pulse" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800">Шаг 1: Идентификация по штрихкоду</h3>
           </div>
-          
+
           <div className="p-6 relative z-10">
-            <form onSubmit={handleScan} className="flex gap-4">
+            <form onSubmit={(e) => void handleScan(e)} className="flex gap-4">
               <div className="flex-1 relative">
                 <Keyboard className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                 <input
@@ -76,8 +137,8 @@ export default function Receiving() {
                   autoFocus
                 />
               </div>
-              <Button type="submit" className="h-11 px-8 text-sm font-bold bg-blue-700 hover:bg-blue-800">
-                Запросить ВУ
+              <Button type="submit" className="h-11 px-8 text-sm font-bold bg-blue-700 hover:bg-blue-800" disabled={scanning}>
+                {scanning ? 'Поиск...' : 'Запросить ВУ'}
               </Button>
             </form>
           </div>
@@ -92,55 +153,67 @@ export default function Receiving() {
                   {scannedProduct.name}
                 </h3>
                 <div className="flex items-center mt-1 text-[11px] font-mono font-medium text-slate-600">
-                  <span className="font-bold text-slate-800 bg-white border border-slate-200 px-1 py-0.5 rounded">{scannedProduct.ref}</span>
+                  <span className="font-bold text-slate-800 bg-white border border-slate-200 px-1 py-0.5 rounded">
+                    <span className="text-slate-400 font-sans font-semibold mr-1">REF</span>{scannedProduct.ref}
+                  </span>
                   <span className="mx-2 text-slate-300 pl-1">|</span>
-                  <span className="font-sans uppercase">{scannedProduct.manufacturer}</span>
+                  <span className="font-sans uppercase">{scannedProduct.manufacturer ?? '—'}</span>
                 </div>
               </div>
             </div>
-            
+
             <div className="p-6 space-y-6">
               <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                 <div className="md:col-span-2 flex flex-col gap-1.5">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Номер партии (LOT)</label>
+                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">LOT / Партия</label>
                   <input
-                    value={lot} 
-                    onChange={(e) => setLot(e.target.value)} 
-                    placeholder="ПАР-202X-..." 
+                    value={lot}
+                    onChange={(e) => setLot(e.target.value)}
+                    placeholder="Номер партии"
                     className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono uppercase text-sm font-bold text-slate-800"
                   />
+                  <p className="text-[10px] text-slate-400">Производственная партия поставщика (например LOT-202X-001)</p>
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Годен до</label>
                   <input
-                    type="date" 
-                    value={expiry} 
-                    onChange={(e) => setExpiry(e.target.value)} 
+                    type="date"
+                    min={new Date().toISOString().slice(0, 10)}
+                    value={expiry}
+                    onChange={(e) => setExpiry(e.target.value)}
                     className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-sm text-slate-800 uppercase"
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Кол-во (Осн. ед.)</label>
                   <input
-                    type="number" 
+                    type="number"
                     min="1"
-                    value={qty} 
-                    onChange={(e) => setQty(e.target.value)} 
-                    placeholder="0" 
+                    value={qty}
+                    onChange={(e) => setQty(e.target.value)}
+                    placeholder="0"
                     className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-base font-bold text-slate-900"
                   />
                 </div>
               </div>
-              
+
               <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded flex items-start gap-3">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-                <p className="text-[11px] leading-tight font-medium">Внимание: Убедитесь в точном соответствии номера партии (LOT) и срока годности. Ошибка на этапе приемки нарушит алгоритм FEFO при списании.</p>
+                <p className="text-[11px] leading-tight font-medium">Внимание: Убедитесь в точном соответствии LOT / Партия и срока годности. Ошибка на этапе приемки нарушит алгоритм FEFO при списании.</p>
               </div>
             </div>
-            
+
             <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setScannedProduct(null)} className="h-9 text-xs font-semibold border-slate-300 text-slate-600 bg-white">Сброс</Button>
-              <Button className="h-9 min-w-[140px] text-xs font-bold bg-emerald-600 hover:bg-emerald-700" onClick={handleConfirm}>Оприходовать партию</Button>
+              <Button variant="outline" onClick={() => setScannedProduct(null)} className="h-9 text-xs font-semibold border-slate-300 text-slate-600 bg-white" disabled={submitting}>
+                Сброс
+              </Button>
+              <Button
+                className="h-9 min-w-[140px] text-xs font-bold bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => void handleConfirm()}
+                disabled={submitting}
+              >
+                {submitting ? 'Оприходование...' : 'Оприходовать LOT / Партию'}
+              </Button>
             </div>
           </div>
         )}

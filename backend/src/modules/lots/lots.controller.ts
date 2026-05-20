@@ -1,13 +1,35 @@
-import { Controller, Get, Query } from '@nestjs/common';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { ADMIN_MANAGER, READ_ROLES } from '../../common/constants/roles';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { JwtUser } from '../../common/interfaces/jwt-user.interface';
+import { LotsQueryDto } from './dto/lots-query.dto';
+import { UpdateLotStatusDto } from './dto/update-lot-status.dto';
 import { LotsService } from './lots.service';
 
 @Controller('lots')
 export class LotsController {
   constructor(private readonly lots: LotsService) {}
 
+  @Roles(...READ_ROLES)
   @Get()
-  list(@Query() query: PaginationQueryDto) {
+  list(@Query() query: LotsQueryDto) {
     return this.lots.list(query);
+  }
+
+  @Roles(...READ_ROLES)
+  @Get('recall/:lotNumber')
+  recallDetail(@Param('lotNumber') lotNumber: string) {
+    return this.lots.getRecallDetail(lotNumber);
+  }
+
+  @Roles(...ADMIN_MANAGER)
+  @Patch(':id/status')
+  updateStatus(
+    @Param('id') id: string,
+    @Body() dto: UpdateLotStatusDto,
+    @CurrentUser() user?: JwtUser,
+  ) {
+    return this.lots.updateStatus(id, dto, user?.email);
   }
 }

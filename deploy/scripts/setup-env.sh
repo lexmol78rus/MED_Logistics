@@ -10,6 +10,8 @@ if [[ -f "${ENV_FILE}" ]]; then
   exit 0
 fi
 
+echo "For production, use: deploy/scripts/generate-prod-env.sh"
+echo "For a manual template, copy deploy/.env.example to deploy/.env"
 cp "${EXAMPLE}" "${ENV_FILE}"
-echo "Created deploy/.env from deploy/.env.example"
-echo "Edit deploy/.env with production secrets before deploying."
+echo "Created deploy/.env from deploy/.env.example (placeholder secrets)."
+echo "Run generate-prod-env.sh or replace secrets before deploying."

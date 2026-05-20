@@ -1,16 +1,267 @@
-import { Injectable } from '@nestjs/common';
-import { PaginationQueryDto } from '../../common/dto/pagination-query.dto';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
+import { MovementType, Prisma } from '@prisma/client';
+import { ProductsQueryDto } from './dto/products-query.dto';
+import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
+import { decimalToNumber } from '../../common/utils/decimal.util';
+import {
+  computeProductStatus,
+  formatNearestExpiry,
+} from '../../common/utils/inventory-status.util';
+import { PrismaService } from '../../prisma/prisma.service';
+import { InventoryBalanceService } from '../inventory/inventory-balance.service';
+import { CreateProductDto } from './dto/create-product.dto';
+import { UpdateProductDto } from './dto/update-product.dto';
+
+export type ProductListItem = {
+  id: string;
+  status: string;
+  name: string;
+  ref: string;
+  manufacturer: string | null;
+  qty: number;
+  availableQty: number;
+  lots: number;
+  nearestExpiry: string;
+  barcode: string | null;
+  minStock: number | null;
+  reorderPoint: number | null;
+  lowStock: boolean;
+};
+
+export type ProductDetail = ProductListItem & {
+  category: string | null;
+  storageCond: string | null;
+};
 
 @Injectable()
 export class ProductsService {
-  /** Placeholder list — wire Prisma and filters when implementing catalog. */
-  list(_query: PaginationQueryDto) {
-    void _query;
+  private readonly logger = new Logger(ProductsService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly balance: InventoryBalanceService,
+  ) {}
+
+  async list(query: ProductsQueryDto): Promise<PaginatedResponse<ProductListItem>> {
+    const page = query.page ?? 1;
+    const pageSize = query.pageSize ?? 20;
+    const search = query.search?.trim();
+    const manufacturer = query.manufacturer?.trim();
+
+    const where: Prisma.ProductWhereInput = {
+      ...(manufacturer
+        ? { manufacturer: { contains: manufacturer, mode: 'insensitive' } }
+        : {}),
+      ...(query.hasExpiry === true
+        ? { lots: { some: { expiryDate: { not: null } } } }
+        : query.hasExpiry === false
+          ? { lots: { every: { expiryDate: null } } }
+          : {}),
+      ...(search
+        ? {
+            OR: [
+              { sku: { contains: search, mode: 'insensitive' } },
+              { name: { contains: search, mode: 'insensitive' } },
+              { manufacturer: { contains: search, mode: 'insensitive' } },
+              { barcodes: { some: { barcode: { contains: search, mode: 'insensitive' } } } },
+            ],
+          }
+        : {}),
+    };
+
+    const products = await this.prisma.product.findMany({
+      where,
+      orderBy: { name: 'asc' },
+      include: {
+        barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
+        lots: { select: { id: true, expiryDate: true } },
+        inventoryRows: { select: { quantity: true } },
+      },
+    });
+
+    let items = await Promise.all(products.map((p) => this.toListItem(p)));
+
+    if (query.lowStock === true) {
+      items = items.filter((i) => i.lowStock);
+    }
+    if (query.status?.trim()) {
+      const status = query.status.trim();
+      items = items.filter((i) => i.status === status);
+    }
+
+    const total = items.length;
+    const paged = items.slice((page - 1) * pageSize, page * pageSize);
+    return { items: paged, total, page, pageSize };
+  }
+
+  async getById(id: string): Promise<ProductDetail> {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: {
+        barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
+        lots: { select: { id: true, expiryDate: true } },
+        inventoryRows: { select: { quantity: true } },
+      },
+    });
+    if (!product) throw new NotFoundException('Товар не найден');
+    const item = await this.toListItem(product);
+    return { ...item, category: null, storageCond: null };
+  }
+
+  async create(dto: CreateProductDto): Promise<ProductDetail> {
+    const sku = dto.sku.trim().toUpperCase();
+    this.logger.log(`create product sku=${sku}`);
+    const existing = await this.prisma.product.findUnique({ where: { sku } });
+    if (existing) throw new ConflictException('Артикул уже существует');
+
+    if (dto.barcode) {
+      const barcodeTaken = await this.prisma.barcodeRecord.findUnique({
+        where: { barcode: dto.barcode.trim() },
+      });
+      if (barcodeTaken) throw new ConflictException('Штрихкод уже используется');
+    }
+
+    const product = await this.prisma.product.create({
+      data: {
+        sku,
+        name: dto.name.trim(),
+        manufacturer: dto.manufacturer?.trim() || null,
+        barcodes: dto.barcode
+          ? { create: { barcode: dto.barcode.trim() } }
+          : undefined,
+      },
+      include: {
+        barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
+        lots: { select: { id: true, expiryDate: true } },
+        inventoryRows: { select: { quantity: true } },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'product.create',
+        entityType: 'product',
+        entityId: product.id,
+        metadata: { sku: product.sku, name: product.name },
+      },
+    });
+
+    const created = await this.toListItem(product);
+    return { ...created, category: null, storageCond: null };
+  }
+
+  async update(id: string, dto: UpdateProductDto, actorEmail?: string): Promise<ProductDetail> {
+    const existing = await this.prisma.product.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Товар не найден');
+
+    if (dto.barcode?.trim()) {
+      const barcodeTaken = await this.prisma.barcodeRecord.findFirst({
+        where: { barcode: dto.barcode.trim(), NOT: { productId: id } },
+      });
+      if (barcodeTaken) throw new ConflictException('Штрихкод уже используется');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.product.update({
+        where: { id },
+        data: {
+          name: dto.name?.trim(),
+          manufacturer:
+            dto.manufacturer !== undefined ? dto.manufacturer?.trim() || null : undefined,
+          minStock:
+            dto.minStock !== undefined ? new Prisma.Decimal(dto.minStock) : undefined,
+          reorderPoint:
+            dto.reorderPoint !== undefined
+              ? new Prisma.Decimal(dto.reorderPoint)
+              : undefined,
+        },
+      });
+
+      if (dto.barcode !== undefined) {
+        const barcode = dto.barcode.trim();
+        await tx.barcodeRecord.deleteMany({ where: { productId: id } });
+        if (barcode) {
+          await tx.barcodeRecord.create({
+            data: { barcode, productId: id },
+          });
+        }
+      }
+
+      const count = await tx.stockMovement.count();
+      await tx.stockMovement.create({
+        data: {
+          reference: `ПЕР-${String(count + 1).padStart(4, '0')}`,
+          productId: id,
+          type: MovementType.ADJUSTMENT,
+          quantity: 0,
+          actorEmail: actorEmail ?? null,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: 'product.update',
+          entityType: 'product',
+          entityId: id,
+          metadata: { sku: existing.sku, changes: JSON.parse(JSON.stringify(dto)) },
+        },
+      });
+    });
+
+    return this.getById(id);
+  }
+
+  private async toListItem(
+    product: {
+      id: string;
+      sku: string;
+      name: string;
+      manufacturer: string | null;
+      minStock: Prisma.Decimal | null;
+      reorderPoint: Prisma.Decimal | null;
+      barcodes: { barcode: string }[];
+      lots: { expiryDate: Date | null }[];
+      inventoryRows: { quantity: Prisma.Decimal }[];
+    },
+  ): Promise<ProductListItem> {
+    const qty = product.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.quantity),
+      0,
+    );
+    const bal = await this.balance.getProductBalance(product.id);
+    const expiries = product.lots
+      .map((l) => l.expiryDate)
+      .filter((d): d is Date => d != null)
+      .sort((a, b) => a.getTime() - b.getTime());
+    const nearestExpiry = expiries[0] ?? null;
+    const minStock = product.minStock != null ? decimalToNumber(product.minStock) : null;
+    const reorderPoint =
+      product.reorderPoint != null ? decimalToNumber(product.reorderPoint) : null;
+    const threshold = reorderPoint ?? minStock;
+    const lowStock =
+      threshold != null &&
+      bal.availableQuantity > 0 &&
+      bal.availableQuantity <= threshold;
+
     return {
-      items: [] as unknown[],
-      total: 0,
-      page: _query.page ?? 1,
-      pageSize: _query.pageSize ?? 20,
+      id: product.id,
+      status: computeProductStatus(bal.availableQuantity, nearestExpiry),
+      name: product.name,
+      ref: product.sku,
+      manufacturer: product.manufacturer,
+      qty,
+      availableQty: bal.availableQuantity,
+      lots: product.lots.length,
+      nearestExpiry: formatNearestExpiry(nearestExpiry),
+      barcode: product.barcodes[0]?.barcode ?? null,
+      minStock,
+      reorderPoint,
+      lowStock,
     };
   }
 }

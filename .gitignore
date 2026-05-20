@@ -23,3 +23,11 @@ backend/.env.*
 deploy/.env
 deploy/.env.*
 !deploy/.env.example
+deploy/backups/
+
+# Build caches / artifacts
+*.tsbuildinfo
+.cache/
+.turbo/
+coverage/
+.env.build

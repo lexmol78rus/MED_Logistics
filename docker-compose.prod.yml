@@ -45,6 +45,15 @@ services:
       JWT_REFRESH_EXPIRES_IN: ${JWT_REFRESH_EXPIRES_IN:-7d}
       THROTTLE_TTL: ${THROTTLE_TTL:-60}
       THROTTLE_LIMIT: ${THROTTLE_LIMIT:-100}
+      THROTTLE_FORGOT_PASSWORD_LIMIT: ${THROTTLE_FORGOT_PASSWORD_LIMIT:-5}
+      APP_URL: ${APP_URL:-http://localhost}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in deploy/.env}
+      INTEGRATION_DEBUG: ${INTEGRATION_DEBUG:-false}
     healthcheck:
       test:
         [
@@ -62,6 +71,9 @@ services:
     build:
       context: .
       dockerfile: frontend/Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-/api/v1}
+        VITE_APP_ENV: ${VITE_APP_ENV:-production}
     container_name: med_warehouse_web_prod
     restart: always
     depends_on:
@@ -69,6 +81,12 @@ services:
         condition: service_healthy
     ports:
       - "${HTTP_PORT:-80}:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
 
 volumes:
   med_warehouse_pg_prod: {}

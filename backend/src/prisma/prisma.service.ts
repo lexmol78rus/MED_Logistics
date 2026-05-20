@@ -9,11 +9,10 @@ export class PrismaService
   private readonly logger = new Logger(PrismaService.name);
 
   constructor() {
+    const debugQueries =
+      process.env.INTEGRATION_DEBUG === 'true' || process.env.NODE_ENV === 'development';
     super({
-      log:
-        process.env.NODE_ENV === 'development'
-          ? ['query', 'warn', 'error']
-          : ['warn', 'error'],
+      log: debugQueries ? ['query', 'warn', 'error'] : ['warn', 'error'],
     });
   }
 

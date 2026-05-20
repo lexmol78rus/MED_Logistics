@@ -24,4 +24,16 @@ export const validationSchema = Joi.object({
     .default('info'),
   THROTTLE_TTL: Joi.number().positive().default(60),
   THROTTLE_LIMIT: Joi.number().positive().default(100),
+  THROTTLE_FORGOT_PASSWORD_LIMIT: Joi.number().positive().default(5),
+  APP_URL: Joi.string().uri().default('http://localhost'),
+  SMTP_HOST: Joi.string().allow('').default(''),
+  SMTP_PORT: Joi.number().port().default(465),
+  SMTP_USER: Joi.string().allow('').default(''),
+  SMTP_PASSWORD: Joi.string().allow('').default(''),
+  SMTP_FROM: Joi.string().allow('').default(''),
+  SETTINGS_ENCRYPTION_KEY: Joi.when('NODE_ENV', {
+    is: Joi.valid('production'),
+    then: Joi.string().min(32).required(),
+    otherwise: Joi.string().min(8).default(''),
+  }),
 });

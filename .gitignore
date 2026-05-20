@@ -1,10 +1,25 @@
 .DS_Store
 Thumbs.db
+*.log
 
-# Backend build artifacts & deps
+# Frontend
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/coverage/
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# Backend
 backend/node_modules/
 backend/dist/
 backend/coverage/
 backend/.env
 backend/.env.*
 !backend/.env.example
+
+# Deploy
+deploy/.env
+deploy/.env.*
+!deploy/.env.example

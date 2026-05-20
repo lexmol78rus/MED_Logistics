@@ -1,134 +1,129 @@
 import { useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
-import { Search, Hash, BoxSelect, AlertTriangle, ArrowUpRight } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Search, BoxSelect, AlertTriangle, ArrowUpRight } from 'lucide-react';
 import { toast } from 'sonner';
 
 export default function WriteOff() {
   const [search, setSearch] = useState('');
   const [selectedProduct, setSelectedProduct] = useState<any>(null);
 
-  // Mock
   const handleSearch = () => {
     setSelectedProduct({
-      name: 'Saline Solution 500ml',
+      name: 'Раствор натрия хлорида 500мл',
       ref: 'REF-1102',
       qtyReq: '',
       lots: [
-        { lot: 'LT-2023-A', expiry: '2026-06-01', qty: 400, fefo: true },
-        { lot: 'LT-2023-C', expiry: '2027-01-15', qty: 2000, fefo: false },
+        { lot: 'ПАР-2023-A', expiry: '2026-06-01', qty: 400, fefo: true },
+        { lot: 'ПАР-2023-C', expiry: '2027-01-15', qty: 2000, fefo: false },
       ]
     });
   };
 
   const handleConfirm = () => {
-    toast.success('Stock written off successfully (FEFO optimal).');
+    toast.success('Товар успешно списан (FEFO соблюден).');
     setSelectedProduct(null);
     setSearch('');
   };
 
   return (
-    <div className="p-8 pb-12 max-w-4xl mx-auto h-full overflow-auto">
-      <div className="mb-8">
-        <h2 className="text-3xl font-bold tracking-tight">Write-off / Issue</h2>
-        <p className="text-muted-foreground mt-2">Deduct stock following FEFO (First Expired, First Out) rules.</p>
+    <div className="h-full max-w-4xl mx-auto flex flex-col gap-4 py-8">
+      <div className="mb-2">
+        <h2 className="text-lg font-bold tracking-tight leading-tight text-slate-800">Расход / Списание со склада</h2>
+        <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-widest mt-0.5">Приоритет: соблюдение правила FEFO</p>
       </div>
 
-      <div className="space-y-8">
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader>
-            <CardTitle className="text-lg">Product Search</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex space-x-4">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 h-5 w-5 text-muted-foreground" />
-                <Input
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Enter REF or Barcode..."
-                  className="pl-10 h-12"
-                />
-              </div>
-              <Button onClick={handleSearch} className="h-12 px-8">Find</Button>
+      <div className="bg-white border border-slate-300 rounded shadow-sm flex items-center p-2 gap-2">
+        <div className="flex-1 relative">
+          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Отсканируйте АРТ или введите штрихкод..."
+            className="w-full pl-8 h-9 text-sm border-slate-300 rounded bg-slate-50 focus:bg-white focus:ring-1 focus:ring-blue-500 px-2 border outline-none font-mono placeholder:font-sans placeholder:text-slate-400 font-bold text-blue-900"
+          />
+        </div>
+        <Button onClick={handleSearch} className="h-9 px-6 bg-slate-800 hover:bg-slate-900 text-xs font-bold">
+          Найти
+        </Button>
+      </div>
+
+      {selectedProduct && (
+        <div className="bg-white border border-slate-300 shadow-md rounded overflow-hidden animate-in fade-in duration-300 flex flex-col">
+          <div className="bg-slate-50 border-b border-slate-200 p-4 flex justify-between items-start">
+            <div>
+              <h3 className="text-lg font-bold text-slate-800 leading-tight">{selectedProduct.name}</h3>
+              <div className="font-mono mt-1 text-xs font-bold text-slate-500 bg-white border border-slate-200 inline-block px-1.5 py-0.5 rounded">{selectedProduct.ref}</div>
             </div>
-          </CardContent>
-        </Card>
-
-        {selectedProduct && (
-          <Card className="animate-in slide-in-from-bottom-4 fade-in duration-300 border-slate-200 bg-white shadow-md">
-            <CardHeader className="bg-secondary/30 pb-4 border-b border-border">
-              <div className="flex justify-between items-start">
-                <div>
-                  <CardTitle className="text-xl">{selectedProduct.name}</CardTitle>
-                  <CardDescription className="font-mono mt-1">{selectedProduct.ref}</CardDescription>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-muted-foreground">Total Available</div>
-                  <div className="text-xl font-bold font-mono text-foreground">2,400</div>
-                </div>
+            <div className="text-right">
+              <div className="text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">Доступный остаток</div>
+              <div className="text-xl font-bold font-mono tracking-tight text-blue-700">2,400 <span className="text-[10px] text-slate-500 font-sans font-normal">шт</span></div>
+            </div>
+          </div>
+          
+          <div className="p-4 flex flex-col gap-4 bg-white">
+            <div className="bg-emerald-50 border border-emerald-200 rounded p-4 relative">
+              <div className="absolute top-0 left-0 bottom-0 w-1 bg-emerald-500 rounded-l" />
+              <div className="flex items-center text-emerald-700 font-bold text-sm mb-1">
+                <BoxSelect className="w-4 h-4 mr-1.5" />
+                FEFO Рекомендация Системы
               </div>
-            </CardHeader>
-            
-            <CardContent className="pt-6 space-y-6">
-              <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-lg">
-                <div className="flex items-center text-emerald-500 font-semibold mb-2">
-                  <BoxSelect className="w-5 h-5 mr-2" />
-                  FEFO Recommendation
+              <p className="text-[11px] font-medium text-emerald-800/80 leading-tight max-w-2xl">
+                Система автоматически приоритезирует партии с наименьшим сроком годности.
+              </p>
+              
+              <div className="mt-4 flex flex-col gap-2">
+                <div className="grid grid-cols-12 text-[9px] font-bold uppercase tracking-wider text-emerald-800/60 pb-1 px-2">
+                  <div className="col-span-4">Партия</div>
+                  <div className="col-span-3">Срок годности</div>
+                  <div className="col-span-2 text-right">Наличие</div>
+                  <div className="col-span-3 text-right">Списание</div>
                 </div>
-                <p className="text-sm text-muted-foreground">The system has selected the optimal LOTs to issue based on closest expiry date. Please pick physical stock matching these LOT numbers.</p>
-                
-                <div className="mt-4 space-y-3">
-                  {selectedProduct.lots.map((lot: any, idx: number) => (
-                    <div key={idx} className={`p-3 rounded border flex items-center justify-between ${lot.fefo ? 'bg-background border-emerald-500/50 relative overflow-hidden' : 'bg-background/50 border-border opacity-60'}`}>
-                      {lot.fefo && <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />}
-                      <div className="flex items-center space-x-4 ml-2">
-                        <div>
-                          <p className="font-mono font-bold text-sm">{lot.lot}</p>
-                          <p className={`text-xs mt-0.5 ${lot.fefo ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
-                            Exp: {lot.expiry} {lot.fefo && '(Priority)'}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="text-right flex items-center space-x-4">
-                         <div className="text-sm text-muted-foreground">Avail: {lot.qty}</div>
-                         {lot.fefo && (
-                          <div className="w-24">
-                            <Input type="number" defaultValue={0} min="0" max={lot.qty} className="h-8 font-mono text-right" />
-                          </div>
-                         )}
-                      </div>
+                {selectedProduct.lots.map((lot: any, idx: number) => (
+                  <div key={idx} className={`grid grid-cols-12 items-center p-2 rounded border ${lot.fefo ? 'bg-white border-emerald-300 shadow-sm' : 'bg-slate-50/50 border-slate-200'}`}>
+                    <div className="col-span-4 flex items-center">
+                      <span className={`font-mono text-xs font-bold ${lot.fefo ? 'text-slate-900' : 'text-slate-500'}`}>{lot.lot}</span>
                     </div>
-                  ))}
-                </div>
+                    <div className="col-span-3">
+                      <span className={`font-mono text-xs ${lot.fefo ? 'text-red-600 font-bold' : 'text-slate-500'}`}>{lot.expiry}</span>
+                    </div>
+                    <div className="col-span-2 text-right font-mono text-xs font-medium text-slate-500">
+                      {lot.qty}
+                    </div>
+                    <div className="col-span-3 flex justify-end">
+                      <input 
+                        type="number" 
+                        defaultValue={0} 
+                        min="0" 
+                        max={lot.qty} 
+                        className={`w-20 pl-2 pr-1 h-7 text-xs font-mono font-bold text-right border rounded focus:outline-none focus:border-blue-500 ${lot.fefo ? 'bg-white border-slate-300 shadow-inner' : 'bg-slate-100 border-slate-200 text-slate-400'}`} 
+                        disabled={!lot.fefo}
+                      />
+                    </div>
+                  </div>
+                ))}
               </div>
+            </div>
 
-              <div className="space-y-4 pt-4 border-t border-border">
-                <div className="flex justify-between items-center bg-secondary/50 p-4 rounded-lg">
-                   <div className="font-semibold">Total Write-off Quantity</div>
-                   <div className="text-2xl font-bold font-mono">0</div>
-                </div>
-                
-                <div className="bg-amber-500/10 text-amber-500 p-3 rounded flex items-start text-sm">
-                  <AlertTriangle className="w-4 h-4 mr-2 mt-0.5 shrink-0" />
-                  Ensure physical stock being packed exactly matches the LOT numbers deducted above to prevent inventory skew.
-                </div>
-              </div>
-            </CardContent>
-            
-            <CardFooter className="bg-secondary/20 border-t border-border pt-6 flex justify-end space-x-4">
-              <Button variant="ghost" onClick={() => setSelectedProduct(null)}>Cancel</Button>
-              <Button onClick={handleConfirm} className="min-w-[150px]">
-                <ArrowUpRight className="w-4 h-4 mr-2" />
-                Issue Stock
+            <div className="flex items-center justify-between bg-slate-50 border border-slate-200 p-3 rounded">
+               <div className="text-xs font-bold text-slate-700 uppercase tracking-wider">Итого к списанию:</div>
+               <div className="text-2xl font-bold font-mono text-slate-900">0</div>
+            </div>
+          </div>
+          
+          <div className="bg-slate-100 border-t border-slate-200 p-3 flex justify-between items-center">
+            <div className="flex items-start text-amber-700 gap-2 max-w-sm">
+              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="text-[10px] font-bold uppercase leading-tight">Проверьте физическое совпадение партий</span>
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setSelectedProduct(null)} className="h-8 text-xs font-semibold bg-white border-slate-300 text-slate-700 hover:bg-slate-50">Отмена</Button>
+              <Button onClick={handleConfirm} className="h-8 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 min-w-[140px]">
+                <ArrowUpRight className="w-3.5 h-3.5 mr-1.5" /> Списать (FEFO)
               </Button>
-            </CardFooter>
-          </Card>
-        )}
-      </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

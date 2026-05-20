@@ -1,42 +1,40 @@
 import { useMemo } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef } from 'ag-grid-community';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
 import { AlertCircle, Clock, ShieldAlert } from 'lucide-react';
 
 export default function ExpiryControl() {
   const rowData = [
-    { id: 1, lot: 'LT-A482X', ref: 'REF-1102', name: 'Saline Solution 500ml', expiry: '2026-06-01', days: 12, qty: 120, status: 'Critical' },
-    { id: 2, lot: 'LT-B991Y', ref: 'REF-4421', name: 'Painkiller IV 100mg', expiry: '2026-06-07', days: 18, qty: 45, status: 'Critical' },
-    { id: 3, lot: 'LT-C110Z', ref: 'REF-6632', name: 'Bandages 10cm', expiry: '2026-06-13', days: 24, qty: 890, status: 'Critical' },
-    { id: 4, lot: 'LT-D992X', ref: 'REF-8842', name: 'Surgical Masks L3', expiry: '2026-07-20', days: 61, qty: 5000, status: 'Warning' },
-    { id: 5, lot: 'LT-E114A', ref: 'REF-2234', name: 'Syringes 5ml', expiry: '2026-08-15', days: 87, qty: 2000, status: 'Warning' },
-    { id: 6, lot: 'LT-Z001X', ref: 'REF-9931', name: 'Latex Gloves M', expiry: '2026-04-10', days: -40, qty: 50, status: 'Expired' },
+    { id: 1, lot: 'ПАР-А482Х', ref: 'REF-1102', name: 'Раствор натрия хлорида 500мл', expiry: '2026-06-01', days: 12, qty: 120, status: 'Критичный' },
+    { id: 2, lot: 'ПАР-В991У', ref: 'REF-4421', name: 'Обезболивающее в/в 100мг', expiry: '2026-06-07', days: 18, qty: 45, status: 'Критичный' },
+    { id: 3, lot: 'ПАР-С110З', ref: 'REF-6632', name: 'Бинт медицинский 10см', expiry: '2026-06-13', days: 24, qty: 890, status: 'Критичный' },
+    { id: 4, lot: 'ПАР-Д992Х', ref: 'REF-8842', name: 'Маска хирургическая L3', expiry: '2026-07-20', days: 61, qty: 5000, status: 'Внимание' },
+    { id: 5, lot: 'ПАР-Е114А', ref: 'REF-2234', name: 'Шприц инъекционный 5мл', expiry: '2026-08-15', days: 87, qty: 2000, status: 'Внимание' },
+    { id: 6, lot: 'ПАР-Я001Х', ref: 'REF-9931', name: 'Перчатки латексные M', expiry: '2024-04-10', days: -40, qty: 50, status: 'Просрочено' },
   ];
 
   const columnDefs = useMemo<ColDef[]>(() => [
     { 
       field: 'status', 
-      headerName: 'Status',
-      width: 130,
+      headerName: 'Статус',
+      width: 120,
       pinned: 'left',
       cellRenderer: (params: any) => {
         const s = params.value;
-        if (s === 'Expired') return <Badge variant="destructive" className="bg-rose-600 uppercase text-[10px] tracking-wider mt-2.5">{s}</Badge>;
-        if (s === 'Critical') return <Badge variant="destructive" className="uppercase text-[10px] tracking-wider mt-2.5">{s}</Badge>;
-        return <Badge variant="secondary" className="uppercase text-warning text-[10px] tracking-wider mt-2.5">{s}</Badge>;
+        if (s === 'Просрочено') return <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-600 text-white">{s}</span>;
+        if (s === 'Критичный') return <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">{s}</span>;
+        return <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-200">{s}</span>;
       }
     },
-    { field: 'days', headerName: 'Days Left', width: 120, type: 'numericColumn', cellClassRules: {
-      'text-rose-500 font-bold': 'x <= 30',
-      'text-amber-500 font-bold': 'x > 30 && x <= 90'
+    { field: 'days', headerName: 'Осталось (дней)', width: 140, type: 'numericColumn', cellClassRules: {
+      'text-rose-600 font-bold': 'x <= 30',
+      'text-amber-600 font-bold': 'x > 30 && x <= 90'
     }},
-    { field: 'expiry', headerName: 'Expiry Date', width: 140, cellClass: 'font-mono' },
-    { field: 'lot', headerName: 'LOT Number', width: 160, cellClass: 'font-mono font-semibold' },
-    { field: 'ref', headerName: 'REF', width: 130, cellClass: 'font-mono text-muted-foreground' },
-    { field: 'name', headerName: 'Product Name', flex: 1, minWidth: 200 },
-    { field: 'qty', headerName: 'Current Qty', width: 130, type: 'numericColumn', cellClass: 'font-mono font-bold' },
+    { field: 'expiry', headerName: 'Срок годности', width: 130, cellClass: 'font-mono text-xs text-slate-700' },
+    { field: 'lot', headerName: 'ЛОТ / Партия', width: 140, cellClass: 'font-mono text-xs font-bold' },
+    { field: 'ref', headerName: 'АРТ', width: 110, cellClass: 'font-mono text-xs text-slate-500' },
+    { field: 'name', headerName: 'Номенклатура', flex: 1, minWidth: 200, cellClass: 'text-xs text-slate-800 font-medium' },
+    { field: 'qty', headerName: 'Остаток', width: 100, type: 'numericColumn', cellClass: 'font-mono text-xs font-bold' },
   ], []);
 
   const defaultColDef = useMemo(() => ({
@@ -46,68 +44,67 @@ export default function ExpiryControl() {
   }), []);
 
   return (
-    <div className="p-8 pb-12 h-full flex flex-col max-w-screen-2xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-3xl font-bold tracking-tight">Expiry Control</h2>
-        <p className="text-muted-foreground mt-1">Monitor approaching expirations and manage expired quarantine stock.</p>
+    <div className="p-4 h-full flex flex-col gap-4">
+      <div>
+        <h2 className="text-lg font-bold tracking-tight leading-tight text-slate-800">Контроль сроков годности</h2>
+        <p className="text-[11px] text-slate-500 font-semibold uppercase tracking-widest mt-0.5">Мониторинг партий, требующих внимания</p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-3 mb-6">
-        <Card className="border-rose-500/50 bg-rose-500/5 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-rose-500 flex items-center">
-              <ShieldAlert className="w-4 h-4 mr-2" />
-              Already Expired
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-rose-600">1</div>
-            <p className="text-xs text-rose-500/80 mt-1">LOTs requiring disposal</p>
-          </CardContent>
-        </Card>
-        <Card className="border-red-200 bg-white shadow-sm border-l-4 border-l-red-500">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-destructive flex items-center">
-              <AlertCircle className="w-4 h-4 mr-2" />
-              Critical (&lt; 30 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono text-destructive">3</div>
-            <p className="text-xs text-muted-foreground mt-1">Action required immediately</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-white border-slate-200 shadow-sm">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground flex items-center">
-              <Clock className="w-4 h-4 mr-2" />
-              Warning (30-90 Days)
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-3xl font-bold font-mono">2</div>
-            <p className="text-xs text-muted-foreground mt-1">Review upcoming FEFO plans</p>
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-3 gap-3 shrink-0">
+        <div className="bg-rose-50 border border-rose-200 rounded p-3 relative overflow-hidden shadow-sm">
+          <div className="absolute top-0 left-0 bottom-0 w-1 bg-rose-600" />
+          <div className="flex items-center text-[11px] font-bold text-rose-700 uppercase tracking-widest mb-1 ml-1.5">
+            <ShieldAlert className="w-3.5 h-3.5 mr-1" />
+            Просрочено
+          </div>
+          <div className="flex items-baseline gap-2 ml-1.5">
+            <span className="text-2xl font-bold font-mono text-rose-700 leading-none">1</span>
+            <span className="text-[10px] font-medium text-rose-600/80 uppercase">к списанию</span>
+          </div>
+        </div>
+        
+        <div className="bg-red-50 border border-red-200 rounded p-3 relative overflow-hidden shadow-sm">
+          <div className="absolute top-0 left-0 bottom-0 w-1 bg-red-500" />
+          <div className="flex items-center text-[11px] font-bold text-red-700 uppercase tracking-widest mb-1 ml-1.5">
+            <AlertCircle className="w-3.5 h-3.5 mr-1" />
+            Критично (&lt; 30 дней)
+          </div>
+          <div className="flex items-baseline gap-2 ml-1.5">
+            <span className="text-2xl font-bold font-mono text-red-700 leading-none">3</span>
+            <span className="text-[10px] font-medium text-red-600/80 uppercase">требуют сбыта</span>
+          </div>
+        </div>
+
+        <div className="bg-amber-50 border border-amber-200 rounded p-3 relative overflow-hidden shadow-sm">
+          <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-400" />
+          <div className="flex items-center text-[11px] font-bold text-amber-700 uppercase tracking-widest mb-1 ml-1.5">
+            <Clock className="w-3.5 h-3.5 mr-1" />
+            Внимание (30-90 дней)
+          </div>
+          <div className="flex items-baseline gap-2 ml-1.5">
+            <span className="text-2xl font-bold font-mono text-amber-700 leading-none">2</span>
+            <span className="text-[10px] font-medium text-amber-600/80 uppercase">план FEFO</span>
+          </div>
+        </div>
       </div>
 
-      <Card className="flex-1 flex flex-col overflow-hidden bg-white border-slate-200 shadow-sm">
-        <div className="p-4 border-b border-border bg-card">
-          <h3 className="font-semibold text-base">At-Risk Inventory List</h3>
+      <div className="flex-1 border-slate-200 border rounded shadow-sm flex flex-col bg-white overflow-hidden min-h-0">
+        <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
+          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-widest">Отчет по партиям риска</h3>
         </div>
         <div className="flex-1 w-full relative">
-          <div className="ag-theme-quartz absolute inset-0">
+          <div className="ag-theme-quartz absolute inset-0" style={{'--ag-font-size': '11px', '--ag-header-height': '32px'} as any}>
             <AgGridReact
               rowData={rowData}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
-              rowHeight={48}
-              headerHeight={40}
+              rowHeight={36}
+              headerHeight={32}
               domLayout="normal"
             />
           </div>
         </div>
-      </Card>
+      </div>
     </div>
   );
 }

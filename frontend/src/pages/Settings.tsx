@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { ArrowRightLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -19,13 +21,14 @@ import {
 import {
   DEFAULT_SETTINGS,
   loadSettings,
+  pickWarehouseSettings,
   saveSettings,
   type WarehouseSettings,
 } from '../lib/settings/storage';
 
 export default function Settings() {
-  const [settings, setSettings] = useState<WarehouseSettings>(DEFAULT_SETTINGS);
-  const [savedSnapshot, setSavedSnapshot] = useState<WarehouseSettings>(DEFAULT_SETTINGS);
+  const [settings, setSettings] = useState<WarehouseSettings>(() => loadSettings());
+  const [savedSnapshot, setSavedSnapshot] = useState<WarehouseSettings>(() => loadSettings());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
 
@@ -33,12 +36,12 @@ export default function Settings() {
     void (async () => {
       try {
         const remote = await fetchSettings();
-        const merged = { ...DEFAULT_SETTINGS, ...remote };
+        const merged = pickWarehouseSettings({ ...DEFAULT_SETTINGS, ...remote });
         setSettings(merged);
         setSavedSnapshot(merged);
         saveSettings(merged);
       } catch {
-        const local = loadSettings();
+        const local = pickWarehouseSettings(loadSettings());
         setSettings(local);
         setSavedSnapshot(local);
       } finally {
@@ -48,16 +51,17 @@ export default function Settings() {
   }, []);
 
   const update = <K extends keyof WarehouseSettings>(key: K, value: WarehouseSettings[K]) => {
-    setSettings((s) => ({ ...s, [key]: value }));
+    setSettings((s) => pickWarehouseSettings({ ...s, [key]: value }));
   };
 
   const handleSave = async () => {
     const previous = savedSnapshot;
     setSaving(true);
-    saveSettings(settings);
+    const toSave = pickWarehouseSettings(settings as WarehouseSettings & Record<string, unknown>);
+    saveSettings(toSave);
     try {
-      const saved = await patchSettings(settings);
-      const merged = { ...DEFAULT_SETTINGS, ...saved };
+      const saved = await patchSettings(toSave);
+      const merged = pickWarehouseSettings({ ...DEFAULT_SETTINGS, ...saved });
       setSettings(merged);
       setSavedSnapshot(merged);
       saveSettings(merged);
@@ -93,7 +97,30 @@ export default function Settings() {
         </p>
       </div>
 
-      <MailSettingsSection />
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Назначения списания</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-slate-600 mb-3">
+            Справочник направлений списания: больницы, отделения, утилизация и др.
+          </p>
+          <Link to="/settings/writeoff-destinations">
+            <Button variant="outline" className="text-xs font-bold">
+              <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />
+              Открыть справочник
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+
+      {import.meta.env.VITE_DISABLE_MAIL_SETTINGS !== 'true' ? (
+        <MailSettingsSection />
+      ) : (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+          Mail settings UI disabled (VITE_DISABLE_MAIL_SETTINGS=true) — trace test mode
+        </p>
+      )}
 
       <Card>
         <CardHeader>

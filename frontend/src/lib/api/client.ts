@@ -3,7 +3,9 @@ import { refreshTokens } from './auth';
 import { useAuthStore } from '../../stores/authStore';
 import { useUserStore } from '../../stores/userStore';
 import type { ApiErrorBody } from '../../types/api';
+import { clampPageSize } from '../pagination';
 import { mapApiMessageForUi } from '../uiTerminology';
+import { finalizeSettingsPatchBody } from './settings-patch-guard';
 
 export class ApiError extends Error {
   status: number;
@@ -71,9 +73,14 @@ export async function apiFetch<T>(
     ...options.headers,
   };
 
+  const method = (options.method ?? 'GET').toUpperCase();
+  const { body: finalizedBody } = finalizeSettingsPatchBody(path, method, options.body);
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...options,
+    method,
     headers,
+    body: finalizedBody ?? options.body,
   });
 
   const body = (await response.json().catch(() => ({}))) as T & ApiErrorBody;
@@ -93,7 +100,6 @@ export async function apiFetch<T>(
       : body.message;
     const rawMessage = message || `Ошибка запроса (${response.status})`;
     const errorMessage = mapApiMessageForUi(rawMessage);
-    console.error('[API]', options.method ?? 'GET', `${apiBaseUrl}${path}`, response.status, body);
 
     if (response.status === 403) {
       throw new ApiError(errorMessage || 'Недостаточно прав', 403);
@@ -109,7 +115,9 @@ export function buildQuery(params: Record<string, string | number | boolean | un
   const search = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (value !== undefined && value !== '') {
-      search.set(key, String(value));
+      const normalized =
+        key === 'pageSize' && typeof value === 'number' ? clampPageSize(value) : value;
+      search.set(key, String(normalized));
     }
   }
   const qs = search.toString();

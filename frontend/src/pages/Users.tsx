@@ -35,7 +35,14 @@ import {
 import type { UserRole } from '../lib/rbac/permissions';
 import { ROLE_LABELS } from '../lib/rbac/permissions';
 import { ApiError } from '../lib/api/client';
+import {
+  isWeakPassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MIN_LENGTH_HINT,
+  PASSWORD_WEAK_HINT,
+} from '../lib/passwordPolicy';
 import { useUserStore } from '../stores/userStore';
+import { createDefaultColDef, sharedGridOptions } from '../lib/agGrid/gridPreset';
 
 const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'];
 
@@ -233,10 +240,7 @@ export default function Users() {
     [currentUser?.userId, handleRoleChange, handleToggleActive],
   );
 
-  const defaultColDef = useMemo(
-    () => ({ sortable: true, resizable: true, suppressMovable: true }),
-    [],
-  );
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   const gridThemeStyle = {
     '--ag-header-background-color': '#f8fafc',
@@ -343,6 +347,7 @@ export default function Users() {
           )}
           <div className="ag-theme-quartz absolute inset-0" style={gridThemeStyle}>
             <AgGridReact
+              {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
               rowData={rowData}
@@ -379,8 +384,13 @@ export default function Users() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                minLength={8}
+                minLength={PASSWORD_MIN_LENGTH}
+                required
               />
+              <p className="mt-1 text-xs text-slate-500">{PASSWORD_MIN_LENGTH_HINT}</p>
+              {isWeakPassword(newPassword) ? (
+                <p className="mt-1 text-xs text-amber-700">{PASSWORD_WEAK_HINT}</p>
+              ) : null}
             </div>
             <div>
               <Label>Роль</Label>
@@ -435,8 +445,13 @@ export default function Users() {
               type="password"
               value={resetPassword}
               onChange={(e) => setResetPasswordValue(e.target.value)}
-              minLength={8}
+              minLength={PASSWORD_MIN_LENGTH}
+              required
             />
+            <p className="mt-1 text-xs text-slate-500">{PASSWORD_MIN_LENGTH_HINT}</p>
+            {isWeakPassword(resetPassword) ? (
+              <p className="mt-1 text-xs text-amber-700">{PASSWORD_WEAK_HINT}</p>
+            ) : null}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setResetOpen(null)}>

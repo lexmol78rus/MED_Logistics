@@ -5,6 +5,107 @@
 @import "ag-grid-community/styles/ag-grid.css";
 @import "ag-grid-community/styles/ag-theme-quartz.css";
 
+/* Expiry control: prevent status badge clipping inside AG Grid cells */
+.expiry-control-grid .ag-cell {
+  overflow: visible;
+  line-height: normal;
+}
+
+.expiry-control-grid .ag-center-cols-viewport,
+.expiry-control-grid .ag-pinned-left-cols-viewport,
+.expiry-control-grid .ag-pinned-right-cols-viewport {
+  overflow-x: auto;
+}
+
+/* Shared compact data grid (products, lots, movements, expiry-control) */
+.compact-data-grid .ag-cell {
+  display: flex;
+  align-items: center;
+  line-height: 1.25;
+}
+
+.compact-data-grid .ag-cell-wrapper,
+.compact-data-grid .ag-cell-value {
+  width: 100%;
+}
+
+.compact-data-grid .ag-cell-numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  justify-content: center;
+  text-align: center;
+}
+
+.compact-data-grid .ag-cell-stock-qty {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.compact-data-grid .ag-cell-lots-count {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.compact-data-grid .ag-cell-movement-qty {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.compact-data-grid .ag-header-cell.ag-header-numeric .ag-header-cell-label,
+.compact-data-grid .ag-header-cell.ag-header-centered .ag-header-cell-label {
+  justify-content: center;
+  width: 100%;
+  line-height: 1.25;
+}
+
+.compact-data-grid .ag-header-cell.ag-header-numeric .ag-header-cell-comp-wrapper {
+  justify-content: center;
+}
+
+/* Override AG numericColumn default right-align */
+.compact-data-grid .ag-right-aligned-cell.ag-cell-numeric {
+  text-align: center;
+}
+
+/* Фильтры AG Grid: не обрезаются контейнером, нормальная ширина на планшете */
+.compact-data-grid {
+  overflow: visible;
+}
+
+.ag-filter-wrapper,
+.ag-popup,
+.ag-popup-child,
+.ag-menu,
+.ag-select-list,
+.ag-picker-field-wrapper.ag-picker-expanded {
+  z-index: 10050 !important;
+  pointer-events: auto !important;
+}
+
+.ag-popup .ag-select-list,
+.ag-popup-child .ag-select-list {
+  position: relative;
+}
+
+.ag-filter-body-wrapper {
+  min-width: 220px;
+}
+
+.ag-filter-select,
+.ag-filter .ag-picker-field-wrapper {
+  min-width: 160px;
+  pointer-events: auto;
+}
+
+.compact-data-grid .ag-root-wrapper,
+.compact-data-grid .ag-body-viewport,
+.compact-data-grid .ag-center-cols-viewport {
+  overflow: visible;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {

@@ -24,6 +24,17 @@ export type UpdateProductPayload = {
   barcode?: string;
 };
 
+export type QuickCreateProductPayload = {
+  barcode: string;
+  name: string;
+  sku?: string;
+  manufacturer?: string;
+};
+
+export type QuickCreateProductResult = ProductDetail & {
+  created: boolean;
+};
+
 export function fetchProducts(query: ProductsQuery = {}) {
   return apiFetch<PaginatedResponse<ProductListItem>>(
     `/products${buildQuery(query)}`,
@@ -36,6 +47,13 @@ export function fetchProduct(id: string) {
 
 export function createProduct(payload: CreateProductPayload) {
   return apiFetch<ProductDetail>('/products', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export function quickCreateProduct(payload: QuickCreateProductPayload) {
+  return apiFetch<QuickCreateProductResult>('/products/quick-create', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

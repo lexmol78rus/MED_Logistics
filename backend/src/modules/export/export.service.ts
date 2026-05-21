@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { MovementType } from '@prisma/client';
+import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -86,6 +87,7 @@ export class ExportService {
       include: {
         product: { select: { sku: true, name: true } },
         lot: { select: { lotNumber: true } },
+        destination: { select: { name: true } },
       },
     });
     const labels: Record<MovementType, string> = {
@@ -102,6 +104,7 @@ export class ExportService {
       'Дата',
       'Тип',
       'Движение',
+      'Куда списано',
       'Приход',
       'Списание',
       'REF',
@@ -115,11 +118,22 @@ export class ExportService {
       const qty = decimalToNumber(m.quantity);
       const isReceipt = m.type === MovementType.RECEIPT || m.type === MovementType.UNBLOCK;
       const isIssue = m.type === MovementType.ISSUE;
+      const destination =
+        isIssue
+          ? resolveWriteoffDestinationLabel(
+              m.destination,
+              m.writeOffDestination,
+              m.writeOffComment,
+            ) ?? ''
+          : '';
+      const movementLabel =
+        isIssue && destination ? `Списано → ${destination}` : labels[m.type];
       return [
         m.reference,
         m.createdAt.toISOString().slice(0, 10),
         labels[m.type],
-        labels[m.type],
+        movementLabel,
+        destination,
         isReceipt ? Math.abs(qty) : '',
         isIssue ? Math.abs(qty) : '',
         m.product.sku,

@@ -37,11 +37,14 @@ docker_prune
 echo "Removing old frontend dist..."
 rm -rf frontend/dist frontend/.env.build
 
-echo "Rebuilding frontend (no cache)..."
-dc build --no-cache web
+echo "Rebuilding api + web (no cache)..."
+dc build --no-cache api web
 
 echo "Starting stack..."
 dc up -d
+
+echo "Applying migrations..."
+dc exec -T api npx prisma migrate deploy
 
 echo "Done."
 echo "Verify: curl -s http://127.0.0.1/version.json"

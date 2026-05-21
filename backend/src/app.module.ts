@@ -25,6 +25,7 @@ import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { ExpiryModule } from './modules/expiry/expiry.module';
 import { ExportModule } from './modules/export/export.module';
 import { SettingsModule } from './modules/settings/settings.module';
+import { WriteoffDestinationsModule } from './modules/writeoff-destinations/writeoff-destinations.module';
 
 @Module({
   imports: [
@@ -79,6 +80,7 @@ import { SettingsModule } from './modules/settings/settings.module';
     ExpiryModule,
     ExportModule,
     SettingsModule,
+    WriteoffDestinationsModule,
   ],
   providers: [
     {

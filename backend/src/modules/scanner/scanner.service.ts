@@ -1,4 +1,6 @@
 import { Injectable } from '@nestjs/common';
+import { normalizeScannedBarcode } from '../../common/barcode-normalize';
+import { buildBarcodeWhere } from '../../common/barcode-lookup';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type ScannerProcessResult = {
@@ -25,9 +27,10 @@ export class ScannerService {
   constructor(private readonly prisma: PrismaService) {}
 
   async process(barcode: string): Promise<ScannerProcessResult> {
-    const trimmed = barcode.trim();
-    if (!trimmed) return { found: false };
+    const candidates = normalizeScannedBarcode(barcode);
+    if (candidates.length === 0) return { found: false };
 
+    const trimmed = candidates[0];
     const upper = trimmed.toUpperCase();
 
     if (this.looksLikeLot(upper)) {
@@ -35,22 +38,37 @@ export class ScannerService {
       if (lotResult) return lotResult;
     }
 
-    const record = await this.prisma.barcodeRecord.findUnique({
-      where: { barcode: trimmed },
-      include: { product: true },
+    const record = await this.prisma.barcodeRecord.findFirst({
+      where: { OR: buildBarcodeWhere(candidates) },
+      include: {
+        product: true,
+        lot: { include: { product: true } },
+      },
     });
 
-    if (record?.product) {
+    const recordProduct = record?.product ?? record?.lot?.product;
+    if (record && recordProduct) {
       return {
         found: true,
-        entityType: 'product',
+        entityType: record.lot ? 'lot' : 'product',
         product: {
-          id: record.product.id,
-          name: record.product.name,
-          ref: record.product.sku,
-          manufacturer: record.product.manufacturer,
+          id: recordProduct.id,
+          name: recordProduct.name,
+          ref: recordProduct.sku,
+          manufacturer: recordProduct.manufacturer,
           barcode: record.barcode,
         },
+        ...(record.lot
+          ? {
+              lot: {
+                id: record.lot.id,
+                lotNumber: record.lot.lotNumber,
+                productId: record.lot.productId,
+                productName: recordProduct.name,
+                ref: recordProduct.sku,
+              },
+            }
+          : {}),
       };
     }
 

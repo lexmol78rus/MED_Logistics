@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, GridReadyEvent, ICellRendererParams } from 'ag-grid-community';
+import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import {
+  COMPACT_GRID_HEADER_HEIGHT,
+  COMPACT_GRID_ROW_HEIGHT,
+  GRID_NUMERIC_COLUMN_WIDTH,
+  compactGridClassName,
+  compactGridThemeStyle,
+  createDefaultColDef,
+  numericColumnDef,
+  sharedGridOptions,
+} from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
 import { ArrowRightLeft, Search, ChevronLeft, ChevronRight, Download, Filter } from 'lucide-react';
 import FilterDrawer from '../components/filters/FilterDrawer';
@@ -10,6 +19,8 @@ import { canExport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { toast } from 'sonner';
 import { fetchMovements } from '../lib/api/movements';
+import { fetchWriteoffDestinations } from '../lib/api/writeoff-destinations';
+import type { WriteoffDestinationItem } from '../lib/api/writeoff-destinations';
 import type { MovementListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
 
@@ -54,8 +65,11 @@ export default function Movements() {
   const [fromDate, setFromDate] = useState('');
   const [toDate, setToDate] = useState('');
   const [operatorFilter, setOperatorFilter] = useState('');
+  const [destinationFilter, setDestinationFilter] = useState('');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [appliedOperator, setAppliedOperator] = useState('');
+  const [appliedDestinationId, setAppliedDestinationId] = useState('');
+  const [destinations, setDestinations] = useState<WriteoffDestinationItem[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [rowData, setRowData] = useState<MovementListItem[]>([]);
@@ -66,6 +80,12 @@ export default function Movements() {
     const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
     return () => clearTimeout(timer);
   }, [searchText]);
+
+  useEffect(() => {
+    void fetchWriteoffDestinations({ pageSize: 200 })
+      .then((data) => setDestinations(data.items))
+      .catch(() => setDestinations([]));
+  }, []);
 
   const loadMovements = useCallback(async () => {
     setLoading(true);
@@ -78,6 +98,7 @@ export default function Movements() {
         from: fromDate || undefined,
         to: toDate || undefined,
         operator: appliedOperator || undefined,
+        writeOffDestinationId: appliedDestinationId || undefined,
       });
       setRowData(data.items);
       setTotal(data.total);
@@ -88,7 +109,7 @@ export default function Movements() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, typeFilter, fromDate, toDate, appliedOperator]);
+  }, [page, pageSize, debouncedSearch, typeFilter, fromDate, toDate, appliedOperator, appliedDestinationId]);
 
   useEffect(() => {
     void loadMovements();
@@ -96,7 +117,7 @@ export default function Movements() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedSearch, typeFilter, fromDate, toDate, appliedOperator]);
+  }, [debouncedSearch, typeFilter, fromDate, toDate, appliedOperator, appliedDestinationId]);
 
   const columnDefs = useMemo<ColDef<MovementListItem>[]>(() => [
     { field: 'id', headerName: 'ДОКУМЕНТ', width: 110, cellClass: 'font-mono text-xs font-bold text-blue-700' },
@@ -117,23 +138,19 @@ export default function Movements() {
     { field: 'ref', headerName: 'REF', width: 110, cellClass: 'font-mono text-xs' },
     { field: 'productName', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 160, cellClass: 'text-xs font-medium' },
     { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 120, cellClass: 'font-mono text-xs', valueFormatter: (p) => (p.value as string | null) ?? '—' },
-    {
+    numericColumnDef({
       field: 'qty',
       headerName: 'КОЛ-ВО',
-      width: 100,
-      cellClass: (params) => qtyClass(params.value as string),
-    },
+      width: GRID_NUMERIC_COLUMN_WIDTH,
+      valueFormatter: (p) => String(p.value ?? ''),
+      cellClass: (params) => `ag-cell-movement-qty ${qtyClass(params.value as string)}`,
+    }),
     { field: 'user', headerName: 'ОПЕРАТОР', width: 160, cellClass: 'text-xs text-slate-500' },
   ], []);
 
-  const defaultColDef = useMemo(() => ({
-    sortable: true,
-    resizable: true,
-    suppressMovable: true,
-  }), []);
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const gridThemeStyle = { '--ag-font-size': '12px' } as CSSProperties;
 
   return (
     <div className="h-full flex flex-col max-w-screen-2xl mx-auto gap-4">
@@ -200,23 +217,43 @@ export default function Movements() {
           <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => setFiltersOpen(true)}>
             <Filter className="w-3.5 h-3.5 mr-1" />
             Фильтры
-            {appliedOperator && <span className="ml-1 bg-blue-600 text-white rounded-full px-1 text-[9px]">!</span>}
+            {(appliedOperator || appliedDestinationId) && (
+              <span className="ml-1 bg-blue-600 text-white rounded-full px-1 text-[9px]">!</span>
+            )}
           </Button>
         </div>
 
         <FilterDrawer
           open={filtersOpen}
           onClose={() => setFiltersOpen(false)}
-          activeCount={appliedOperator ? 1 : 0}
+          activeCount={(appliedOperator ? 1 : 0) + (appliedDestinationId ? 1 : 0)}
           onApply={() => {
             setAppliedOperator(operatorFilter.trim());
+            setAppliedDestinationId(destinationFilter);
             setFiltersOpen(false);
           }}
           onReset={() => {
             setOperatorFilter('');
+            setDestinationFilter('');
             setAppliedOperator('');
+            setAppliedDestinationId('');
           }}
         >
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase">Назначение списания</label>
+            <select
+              className="w-full h-8 mt-1 px-2 text-sm border border-slate-300 rounded bg-white"
+              value={destinationFilter}
+              onChange={(e) => setDestinationFilter(e.target.value)}
+            >
+              <option value="">Все назначения</option>
+              {destinations.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}{!d.isActive ? ' (архив)' : ''}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="text-[10px] font-bold text-slate-500 uppercase">Оператор (email)</label>
             <input
@@ -234,16 +271,16 @@ export default function Movements() {
               Загрузка...
             </div>
           )}
-          <div className="ag-theme-quartz absolute inset-0" style={gridThemeStyle}>
+          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
+              {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
               rowData={rowData}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
-              rowHeight={40}
-              headerHeight={36}
-              onGridReady={(e: GridReadyEvent) => e.api.sizeColumnsToFit()}
+              rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              headerHeight={COMPACT_GRID_HEADER_HEIGHT}
             />
           </div>
         </div>

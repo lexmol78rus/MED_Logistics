@@ -10,6 +10,7 @@ export type MovementsQuery = {
   to?: string;
   search?: string;
   operator?: string;
+  writeOffDestinationId?: string;
 };
 
 export function fetchMovements(query: MovementsQuery = {}) {

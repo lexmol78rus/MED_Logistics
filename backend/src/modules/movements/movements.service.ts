@@ -4,11 +4,13 @@ import { PaginatedResponse } from '../../common/interfaces/paginated-response.in
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MovementsQueryDto } from './dto/movements-query.dto';
+import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
 
 export type MovementListItem = {
   id: string;
   date: string;
   type: string;
+  destination: string | null;
   productName: string;
   ref: string;
   lot: string | null;
@@ -54,6 +56,9 @@ export class MovementsService {
       ...(query.operator?.trim()
         ? { actorEmail: { contains: query.operator.trim(), mode: 'insensitive' } }
         : {}),
+      ...(query.writeOffDestinationId
+        ? { writeOffDestinationId: query.writeOffDestinationId }
+        : {}),
       ...(search
         ? {
             OR: [
@@ -77,6 +82,7 @@ export class MovementsService {
         include: {
           product: { select: { name: true, sku: true } },
           lot: { select: { lotNumber: true } },
+          destination: { select: { name: true } },
         },
       }),
     ]);
@@ -93,10 +99,24 @@ export class MovementsService {
               : '';
       const absQty = Math.abs(qtyNum);
 
+      const destinationLabel =
+        m.type === MovementType.ISSUE
+          ? resolveWriteoffDestinationLabel(
+              m.destination,
+              m.writeOffDestination,
+              m.writeOffComment,
+            )
+          : null;
+      const typeLabel =
+        m.type === MovementType.ISSUE && destinationLabel
+          ? `Списано → ${destinationLabel}`
+          : TYPE_LABELS[m.type];
+
       return {
         id: m.reference,
         date: formatMovementDate(m.createdAt),
-        type: TYPE_LABELS[m.type],
+        type: typeLabel,
+        destination: destinationLabel,
         productName: m.product.name,
         ref: m.product.sku,
         lot: m.lot?.lotNumber ?? null,

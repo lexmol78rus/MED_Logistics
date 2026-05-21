@@ -1,10 +1,11 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ADMIN_MANAGER, READ_ROLES } from '../../common/constants/roles';
+import { ADMIN_MANAGER, ADMIN_MANAGER_OPERATOR, READ_ROLES } from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtUser } from '../../common/interfaces/jwt-user.interface';
 import { ProductsQueryDto } from './dto/products-query.dto';
 import { CreateProductDto } from './dto/create-product.dto';
+import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
 
@@ -28,6 +29,12 @@ export class ProductsController {
   @Post()
   create(@Body() dto: CreateProductDto) {
     return this.products.create(dto);
+  }
+
+  @Roles(...ADMIN_MANAGER_OPERATOR)
+  @Post('quick-create')
+  quickCreate(@Body() dto: QuickCreateProductDto) {
+    return this.products.quickCreate(dto);
   }
 
   @Roles(...ADMIN_MANAGER)

@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { fetchRecallLot, recallUpdateStatus, type RecallLotDetail } from '../lib/api/recall';
 import { ApiError } from '../lib/api/client';
+import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
 
 export default function RecallManagement() {
   const navigate = useNavigate();
@@ -119,13 +120,15 @@ export default function RecallManagement() {
           </div>
 
           <div className="p-4 flex flex-col gap-4 bg-white">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="p-3 border border-slate-200 rounded bg-slate-50 shadow-inner">
-                <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Места хранения</div>
-                <div className="font-mono text-sm font-bold text-slate-800">
-                  {lotData.locations.length ? lotData.locations.join(', ') : '—'}
+            <div className={`grid gap-3 ${SHOW_WAREHOUSE_LOCATIONS ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {SHOW_WAREHOUSE_LOCATIONS && (
+                <div className="p-3 border border-slate-200 rounded bg-slate-50 shadow-inner">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Места хранения</div>
+                  <div className="font-mono text-sm font-bold text-slate-800">
+                    {lotData.locations.length ? lotData.locations.join(', ') : '—'}
+                  </div>
                 </div>
-              </div>
+              )}
               <div className="p-3 border border-rose-200 rounded bg-rose-50 shadow-inner relative overflow-hidden">
                 <div className="absolute top-0 left-0 bottom-0 w-1 bg-rose-500 rounded-l" />
                 <div className="text-[10px] font-bold text-rose-700 uppercase tracking-widest mb-1.5 pl-1.5">Уже отгружено (РИСК!)</div>

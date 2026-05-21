@@ -1,10 +1,18 @@
-import { useState, useRef, useEffect } from 'react';
+import { useCallback, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScanLine, CheckCircle2, ArrowDownToLine, Keyboard, AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { processScanner } from '../lib/api/scanner';
 import { receiveInventory } from '../lib/api/inventory';
+import type { QuickCreateProductResult } from '../lib/api/products';
 import { ApiError } from '../lib/api/client';
+import { useScannerField } from '../lib/scanner/useScannerField';
+import ReceivingCreateProductModal from '../components/receiving/ReceivingCreateProductModal';
+import { useUserStore } from '../stores/userStore';
+import {
+  isNotFoundScanError,
+  shouldOpenReceivingCreateModal,
+} from '../lib/receiving/unknownBarcode';
 
 type ScannedProduct = {
   id: string;
@@ -15,6 +23,7 @@ type ScannedProduct = {
 };
 
 export default function Receiving() {
+  const userRole = useUserStore((s) => s.user?.role ?? null);
   const [barcode, setBarcode] = useState('');
   const [scannedProduct, setScannedProduct] = useState<ScannedProduct | null>(null);
   const [lot, setLot] = useState('');
@@ -22,22 +31,47 @@ export default function Receiving() {
   const [qty, setQty] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
+  const [pendingReceivingFlow, setPendingReceivingFlow] = useState(false);
 
-  useEffect(() => {
-    inputRef.current?.focus();
+  const resumeReceivingFlow = useCallback((product: QuickCreateProductResult, scannedBarcode: string) => {
+    setScannedProduct({
+      id: product.id,
+      name: product.name,
+      ref: product.ref,
+      manufacturer: product.manufacturer,
+      barcode: product.barcode ?? scannedBarcode,
+    });
+    setPendingBarcode(null);
+    setPendingReceivingFlow(false);
+    setLot('');
+    setExpiry('');
+    setQty('');
+    toast.success('Продолжите приёмку: укажите партию, срок и количество.');
   }, []);
 
-  const handleScan = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!barcode.trim()) return;
+  const openCreateProductModal = useCallback((scannedBarcode: string) => {
+    setPendingBarcode(scannedBarcode);
+    setPendingReceivingFlow(true);
+    setScannedProduct(null);
+    setCreateModalOpen(true);
+  }, []);
+
+  const lookupBarcode = async (raw: string) => {
+    const code = raw.trim();
+    if (!code || createModalOpen) return;
 
     setScanning(true);
     try {
-      const result = await processScanner(barcode.trim());
+      const result = await processScanner(code);
       if (!result.found || !result.product) {
-        toast.error('Неизвестный штрихкод. Заведите карточку в справочнике.');
-        setScannedProduct(null);
+        if (shouldOpenReceivingCreateModal(userRole)) {
+          openCreateProductModal(code);
+        } else {
+          toast.error('Недостаточно прав для создания товара при приёмке.');
+          setScannedProduct(null);
+        }
         return;
       }
       setScannedProduct({
@@ -47,12 +81,37 @@ export default function Receiving() {
         manufacturer: result.product.manufacturer,
         barcode: result.product.barcode,
       });
+      setPendingReceivingFlow(false);
       toast.success('Товар идентифицирован в базе.');
     } catch (err) {
+      if (shouldOpenReceivingCreateModal(userRole) && isNotFoundScanError(err)) {
+        openCreateProductModal(code);
+        return;
+      }
       toast.error(err instanceof ApiError ? err.message : 'Ошибка сканирования');
     } finally {
       setScanning(false);
+      setBarcode('');
     }
+  };
+
+  const { inputRef, handleKeyDown, restoreFocus } = useScannerField({
+    onScan: lookupBarcode,
+    onClear: () => setBarcode(''),
+    enabled: !createModalOpen,
+  });
+
+  const handleCreateModalClose = () => {
+    setCreateModalOpen(false);
+    setPendingBarcode(null);
+    setPendingReceivingFlow(false);
+    restoreFocus();
+  };
+
+  const handleProductCreated = (product: QuickCreateProductResult) => {
+    if (!pendingBarcode) return;
+    resumeReceivingFlow(product, pendingBarcode);
+    restoreFocus();
   };
 
   const handleConfirm = async () => {
@@ -96,7 +155,8 @@ export default function Receiving() {
       setLot('');
       setExpiry('');
       setQty('');
-      setTimeout(() => inputRef.current?.focus(), 100);
+      setPendingReceivingFlow(false);
+      restoreFocus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Ошибка оприходования');
     } finally {
@@ -106,12 +166,24 @@ export default function Receiving() {
 
   return (
     <div className="h-full max-w-4xl mx-auto flex flex-col justify-center pb-20">
+      <ReceivingCreateProductModal
+        open={createModalOpen && !!pendingBarcode}
+        barcode={pendingBarcode ?? ''}
+        onClose={handleCreateModalClose}
+        onCreated={handleProductCreated}
+      />
+
       <div className="mb-6 flex flex-col items-center">
         <div className="w-12 h-12 bg-blue-100 text-blue-700 flex items-center justify-center rounded mb-3 shadow-[0_0_15px_rgba(59,130,246,0.2)]">
           <ArrowDownToLine className="w-6 h-6" />
         </div>
         <h2 className="text-2xl font-bold tracking-tight text-slate-800">Рабочее место приемки (РМП)</h2>
         <p className="text-xs font-semibold text-slate-500 mt-1 uppercase tracking-wider">Отсканируйте код маркировки для старта</p>
+        {pendingReceivingFlow && !createModalOpen && (
+          <p className="text-[10px] font-semibold text-amber-700 mt-2 uppercase tracking-wider">
+            Ожидание создания товара для продолжения приёмки
+          </p>
+        )}
       </div>
 
       <div className="grid gap-6">
@@ -124,23 +196,32 @@ export default function Receiving() {
           </div>
 
           <div className="p-6 relative z-10">
-            <form onSubmit={(e) => void handleScan(e)} className="flex gap-4">
+            <div className="flex gap-4">
               <div className="flex-1 relative">
                 <Keyboard className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
                 <input
                   ref={inputRef}
                   value={barcode}
-                  onChange={(e) => setBarcode(e.target.value)}
+                  onChange={(e) => {
+                    if (!scanning) setBarcode(e.target.value);
+                  }}
+                  onKeyDown={handleKeyDown}
                   placeholder="Ожидание ввода со сканера..."
                   className="w-full pl-9 h-11 px-3 py-2 border-2 text-sm font-mono font-bold bg-slate-50 border-slate-300 rounded focus:border-blue-500 focus:bg-white focus:outline-none transition-colors placeholder:font-sans placeholder:font-normal placeholder:text-slate-400 text-blue-900"
                   autoComplete="off"
                   autoFocus
+                  disabled={scanning || createModalOpen}
                 />
               </div>
-              <Button type="submit" className="h-11 px-8 text-sm font-bold bg-blue-700 hover:bg-blue-800" disabled={scanning}>
+              <Button
+                type="button"
+                className="h-11 px-8 text-sm font-bold bg-blue-700 hover:bg-blue-800"
+                disabled={scanning || !barcode.trim() || createModalOpen}
+                onClick={() => void lookupBarcode(barcode)}
+              >
                 {scanning ? 'Поиск...' : 'Запросить ВУ'}
               </Button>
-            </form>
+            </div>
           </div>
         </div>
 
@@ -171,6 +252,7 @@ export default function Receiving() {
                     onChange={(e) => setLot(e.target.value)}
                     placeholder="Номер партии"
                     className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono uppercase text-sm font-bold text-slate-800"
+                    autoFocus
                   />
                   <p className="text-[10px] text-slate-400">Производственная партия поставщика (например LOT-202X-001)</p>
                 </div>

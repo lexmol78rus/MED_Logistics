@@ -4,6 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { resetPasswordWithToken } from '../lib/api/auth';
+import {
+  isPasswordTooShort,
+  isWeakPassword,
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_MIN_LENGTH_HINT,
+  PASSWORD_TOO_SHORT_MESSAGE,
+  PASSWORD_WEAK_HINT,
+} from '../lib/passwordPolicy';
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -25,8 +33,8 @@ export default function ResetPassword() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Пароль должен содержать не менее 8 символов');
+    if (isPasswordTooShort(password)) {
+      setError(PASSWORD_TOO_SHORT_MESSAGE);
       return;
     }
 
@@ -64,7 +72,7 @@ export default function ResetPassword() {
     <div className="flex min-h-screen items-center justify-center bg-[#E2E8F0] px-4">
       <div className="w-full max-w-md rounded-lg border border-slate-300 bg-white p-6 shadow-sm">
         <h1 className="text-lg font-bold text-slate-900">Новый пароль</h1>
-        <p className="mt-1 text-sm text-slate-600">Минимум 8 символов.</p>
+        <p className="mt-1 text-sm text-slate-600">{PASSWORD_MIN_LENGTH_HINT}.</p>
 
         {success ? (
           <p className="mt-6 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
@@ -81,8 +89,11 @@ export default function ResetPassword() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                minLength={8}
+                minLength={PASSWORD_MIN_LENGTH}
               />
+              {isWeakPassword(password) ? (
+                <p className="text-sm text-amber-700">{PASSWORD_WEAK_HINT}</p>
+              ) : null}
             </div>
 
             <div className="space-y-2">
@@ -94,7 +105,7 @@ export default function ResetPassword() {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 required
-                minLength={8}
+                minLength={PASSWORD_MIN_LENGTH}
               />
             </div>
 

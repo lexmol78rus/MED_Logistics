@@ -40,6 +40,9 @@ export class SettingsController {
     @Body() dto: PatchMailSettingsDto,
     @CurrentUser() user?: JwtUser,
   ) {
+    if (process.env.SETTINGS_MAIL_PATCH_STUB === '1') {
+      return { ok: true, stub: true, dto };
+    }
     return this.settingsMail.patchMailSettings(
       dto,
       user?.userId,

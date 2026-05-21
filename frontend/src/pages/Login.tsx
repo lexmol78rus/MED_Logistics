@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { loginWithCredentials } from '../lib/api/auth';
+import { PASSWORD_MIN_LENGTH } from '../lib/passwordPolicy';
 import { isJwtValid } from '../lib/auth/jwt';
 import { useAuthStore } from '../stores/authStore';
 import { useUserStore } from '../stores/userStore';
@@ -85,7 +86,7 @@ export default function Login() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
-              minLength={8}
+              minLength={PASSWORD_MIN_LENGTH}
             />
           </div>
 

@@ -2,17 +2,42 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, ICellRendererParams } from 'ag-grid-community';
-import { AlertCircle, Clock, ShieldAlert, Download } from 'lucide-react';
+import {
+  COMPACT_GRID_HEADER_HEIGHT,
+  COMPACT_GRID_ROW_HEIGHT,
+  compactGridClassName,
+  compactGridThemeStyle,
+  createDefaultColDef,
+  numericColumnDef,
+  sharedGridOptions,
+  stockQtyColumnDef,
+} from '../lib/agGrid/gridPreset';
+import { AlertCircle, Clock, RefreshCw, ShieldAlert, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
-import { fetchExpiry, fetchExpirySummary, type ExpiryListItem } from '../lib/api/expiry';
+import { ExpiryStatusBadge, matchesExpiryStatusFilter } from '../components/expiry/ExpiryStatusBadge';
+import { fetchExpiryAll, fetchExpirySummary, type ExpiryListItem } from '../lib/api/expiry';
 import { updateLotStatus } from '../lib/api/lots';
 import { downloadExport } from '../lib/export/download';
-import { ApiError } from '../lib/api/client';
 import { canExport, canManageLotStatus } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 
 type FilterKey = '' | 'expired' | 'lt30' | 'lt90';
+
+const LOAD_ERROR_MESSAGE = 'Не удалось загрузить контроль сроков';
+const statusCellStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  overflow: 'visible',
+  paddingLeft: '4px',
+  paddingRight: '4px',
+} as const;
+
+const actionsCellStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  overflow: 'visible',
+} as const;
 
 export default function ExpiryControl() {
   const navigate = useNavigate();
@@ -22,28 +47,31 @@ export default function ExpiryControl() {
   const [manufacturer, setManufacturer] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [rowData, setRowData] = useState<ExpiryListItem[]>([]);
-  const [summary, setSummary] = useState({ expired: 0, lt30: 0, lt90: 0 });
+  const [summary, setSummary] = useState({ expired: 0, lt30: 0, lt90: 0, restricted: 0, total: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(false);
     try {
       const [list, sum] = await Promise.all([
-        fetchExpiry({
-          page: 1,
-          pageSize: 500,
+        fetchExpiryAll({
           filter: filter || 'all',
           manufacturer: manufacturer || undefined,
-          status: statusFilter || undefined,
         }),
         fetchExpirySummary(),
       ]);
-      setRowData(list.items);
+      const items = statusFilter
+        ? list.items.filter((row) => matchesExpiryStatusFilter(row, statusFilter))
+        : list.items;
+      setRowData(items);
       setSummary(sum);
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка загрузки');
-      setRowData([]);
+      console.error('[ExpiryControl] load failed', err);
+      setLoadError(true);
+      toast.error(LOAD_ERROR_MESSAGE);
     } finally {
       setLoading(false);
     }
@@ -60,7 +88,8 @@ export default function ExpiryControl() {
       toast.success(status === 'QUARANTINE' ? 'Партия в карантине' : 'Партия заблокирована');
       void load();
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка');
+      console.error('[ExpiryControl] status update failed', err);
+      toast.error('Не удалось изменить статус партии');
     } finally {
       setActionId(null);
     }
@@ -71,34 +100,24 @@ export default function ExpiryControl() {
       {
         field: 'status',
         headerName: 'Статус',
-        width: 120,
+        width: 128,
+        minWidth: 128,
         pinned: 'left',
+        sortable: true,
+        filter: 'agTextColumnFilter',
+        cellStyle: statusCellStyle,
         cellRenderer: (params: ICellRendererParams<ExpiryListItem>) => {
-          const s = params.value as string;
-          if (s === 'Просрочено')
-            return (
-              <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-rose-600 text-white">
-                {s}
-              </span>
-            );
-          if (s === 'Критичный')
-            return (
-              <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-red-100 text-red-700 border border-red-200">
-                {s}
-              </span>
-            );
-          return (
-            <span className="inline-flex items-center mt-2.5 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-200">
-              {s}
-            </span>
-          );
+          const row = params.data;
+          if (!row) return null;
+          return <ExpiryStatusBadge row={row} />;
         },
       },
-      {
+      numericColumnDef({
         field: 'days',
         headerName: 'Осталось (дней)',
         width: 140,
-        type: 'numericColumn',
+        minWidth: 140,
+        maxWidth: 140,
         cellClassRules: {
           'text-rose-600 font-bold': (p) => (p.value as number) < 0,
           'text-red-600 font-bold': (p) => {
@@ -110,28 +129,32 @@ export default function ExpiryControl() {
             return v >= 30 && v < 90;
           },
         },
-      },
+      }),
       { field: 'expiry', headerName: 'Срок годности', width: 130, cellClass: 'font-mono text-xs text-slate-700' },
       { field: 'lot', headerName: 'LOT / Партия', width: 140, cellClass: 'font-mono text-xs font-bold' },
       { field: 'ref', headerName: 'REF', width: 110, cellClass: 'font-mono text-xs text-slate-500' },
       { field: 'name', headerName: 'Номенклатура', flex: 1, minWidth: 200, cellClass: 'text-xs text-slate-800 font-medium' },
-      { field: 'qty', headerName: 'Остаток', width: 100, type: 'numericColumn', cellClass: 'font-mono text-xs font-bold' },
+      stockQtyColumnDef('qty', { headerName: 'Остаток' }),
       {
         headerName: 'Действия',
-        width: 200,
+        width: 210,
+        minWidth: 210,
         pinned: 'right',
+        sortable: false,
+        filter: false,
+        cellStyle: actionsCellStyle,
         cellRenderer: (params: ICellRendererParams<ExpiryListItem>) => {
           const row = params.data;
           if (!row) return null;
           const busy = actionId === row.id;
           return (
-            <div className="flex gap-1 items-center h-full py-1">
+            <div className="flex h-full w-full items-center gap-1">
               {showActions && (
                 <>
                   <button
                     type="button"
                     disabled={busy}
-                    className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200"
+                    className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200"
                     onClick={() => void handleStatus(row, 'QUARANTINE')}
                   >
                     Карантин
@@ -139,7 +162,7 @@ export default function ExpiryControl() {
                   <button
                     type="button"
                     disabled={busy}
-                    className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-red-100 border border-red-300 rounded hover:bg-red-200"
+                    className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-red-100 border border-red-300 rounded hover:bg-red-200"
                     onClick={() => void handleStatus(row, 'BLOCKED')}
                   >
                     Блок
@@ -148,7 +171,7 @@ export default function ExpiryControl() {
               )}
               <button
                 type="button"
-                className="text-[9px] font-bold uppercase px-1.5 py-0.5 bg-slate-100 border border-slate-300 rounded"
+                className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-slate-100 border border-slate-300 rounded hover:bg-slate-200"
                 onClick={() => navigate(`/products/${row.productId}`)}
               >
                 Товар
@@ -162,12 +185,35 @@ export default function ExpiryControl() {
   );
 
   const defaultColDef = useMemo(
-    () => ({ sortable: true, filter: true, resizable: true }),
+    () => createDefaultColDef({ wrapText: false, autoHeight: false }),
     [],
   );
 
+  const showEmptyState = !loading && !loadError && rowData.length === 0;
+  const gridOverlay = loadError ? (
+    <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-white/90 text-center px-4">
+      <p className="text-sm font-semibold text-slate-700">{LOAD_ERROR_MESSAGE}</p>
+      <Button variant="outline" size="sm" className="h-8 text-xs" onClick={() => void load()}>
+        <RefreshCw className="w-3.5 h-3.5 mr-1" />
+        Повторить
+      </Button>
+    </div>
+  ) : showEmptyState ? (
+    <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/80 text-sm text-slate-500 font-medium">
+      Нет партий по выбранным фильтрам
+    </div>
+  ) : null;
+
+  const kpiSum = summary.expired + summary.lt30 + summary.lt90;
+  const recordHint =
+    !loading && !loadError
+      ? statusFilter
+        ? `${rowData.length} из ${summary.total}`
+        : `${rowData.length} записей`
+      : null;
+
   return (
-    <div className="p-4 h-full flex flex-col gap-4">
+    <div className="p-4 h-full flex flex-col gap-4 expiry-control-page">
       <div className="flex justify-between items-start">
         <div>
           <h2 className="text-lg font-bold tracking-tight leading-tight text-slate-800">Контроль сроков годности</h2>
@@ -219,6 +265,13 @@ export default function ExpiryControl() {
         </div>
       </div>
 
+      {!loading && !loadError && summary.restricted > 0 && (
+        <p className="text-[10px] text-slate-500 -mt-2">
+          Изоляция (карантин/блок): {summary.restricted} · в отчёте всего {summary.total} партий
+          {kpiSum < summary.total ? ` (${kpiSum} по сроку + ${summary.total - kpiSum} изоляция)` : ''}
+        </p>
+      )}
+
       <div className="flex flex-wrap gap-2 shrink-0">
         {[
           { key: '' as FilterKey, label: 'Все риски' },
@@ -256,17 +309,28 @@ export default function ExpiryControl() {
       <div className="flex-1 border-slate-200 border rounded shadow-sm flex flex-col bg-white overflow-hidden min-h-0">
         <div className="bg-slate-50 border-b border-slate-200 px-3 py-2 flex items-center justify-between">
           <h3 className="text-xs font-bold text-slate-700 uppercase tracking-widest">Отчет по партиям риска</h3>
-          {loading && <span className="text-[10px] text-slate-400">Загрузка...</span>}
+          <div className="flex items-center gap-2">
+            {loading && <span className="text-[10px] text-slate-400">Загрузка...</span>}
+            {recordHint && (
+              <span className="text-[10px] text-slate-500 font-mono">{recordHint}</span>
+            )}
+          </div>
         </div>
         <div className="flex-1 w-full relative">
-          <div className="ag-theme-quartz absolute inset-0" style={{ '--ag-font-size': '11px', '--ag-header-height': '32px' } as React.CSSProperties}>
+          {gridOverlay}
+          <div
+            className={`${compactGridClassName} expiry-control-grid absolute inset-0 ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+            style={compactGridThemeStyle}
+          >
             <AgGridReact
+              {...sharedGridOptions}
               theme="legacy"
               rowData={rowData}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
-              rowHeight={36}
-              headerHeight={32}
+              rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              headerHeight={COMPACT_GRID_HEADER_HEIGHT}
+              overlayNoRowsTemplate="<span></span>"
             />
           </div>
         </div>

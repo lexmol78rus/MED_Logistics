@@ -1,11 +1,20 @@
 import { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Loader2, Terminal, CheckCircle2 } from 'lucide-react';
 import { processScanner } from '../../lib/api/scanner';
 import { useScannerField } from '../../lib/scanner/useScannerField';
-import { ApiError } from '../../lib/api/client';
 
-export default function GlobalScanner() {
+const PAGE_SCANNER_ROUTES = ['/receiving', '/terminal'];
+
+function PageScannerBanner() {
+  return (
+    <div className="flex items-center flex-1 max-w-2xl text-[10px] font-bold uppercase tracking-wider text-slate-500">
+      Сканер: рабочее место страницы
+    </div>
+  );
+}
+
+function GlobalScannerInput() {
   const navigate = useNavigate();
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -55,6 +64,7 @@ export default function GlobalScanner() {
 
   const { inputRef, handleKeyDown, enqueueScan } = useScannerField({
     onScan: runSearch,
+    onClear: () => setValue(''),
   });
 
   useEffect(() => {
@@ -95,4 +105,12 @@ export default function GlobalScanner() {
       )}
     </div>
   );
+}
+
+export default function GlobalScanner() {
+  const location = useLocation();
+  if (PAGE_SCANNER_ROUTES.includes(location.pathname)) {
+    return <PageScannerBanner />;
+  }
+  return <GlobalScannerInput />;
 }

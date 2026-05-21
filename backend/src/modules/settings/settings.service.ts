@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { PatchSettingsDto } from './dto/patch-settings.dto';
+import { toWarehouseSettingsResponse } from './settings-response.util';
 import {
   DEFAULT_SYSTEM_SETTINGS,
   type SystemSettingsPayload,
@@ -20,7 +21,7 @@ export class SettingsService {
       where: { id: 'default' },
     });
     if (!row) return { ...DEFAULT_SYSTEM_SETTINGS };
-    return { ...DEFAULT_SYSTEM_SETTINGS, ...(row.payload as SystemSettingsPayload) };
+    return toWarehouseSettingsResponse(row.payload as Record<string, unknown>);
   }
 
   async patch(
@@ -58,6 +59,6 @@ export class SettingsService {
       metadata: { changes: JSON.parse(JSON.stringify(dto)) },
     });
 
-    return next;
+    return toWarehouseSettingsResponse(next);
   }
 }

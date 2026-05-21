@@ -31,7 +31,10 @@ export type ReceivePayload = {
 
 export type WriteoffPayload = {
   productId: string;
+  writeOffDestinationId: string;
+  writeOffComment?: string;
   lines: { lotId: string; quantity: number }[];
+  useFefoRecommendations?: boolean;
 };
 
 export function fetchInventoryBalance(params?: {
@@ -57,7 +60,11 @@ export function receiveInventory(payload: ReceivePayload) {
   );
 }
 
-export function fetchWriteoffRecommendation(params: { productId?: string; q?: string }) {
+export function fetchWriteoffRecommendation(params: {
+  productId?: string;
+  q?: string;
+  useFefoRecommendations?: boolean;
+}) {
   return apiFetch<WriteoffRecommendation>(
     `/inventory/writeoff/recommendation${buildQuery(params)}`,
   );

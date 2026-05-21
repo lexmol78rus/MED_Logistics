@@ -36,7 +36,7 @@ export class ExpiryService {
 
   async list(query: ExpiryQueryDto): Promise<PaginatedResponse<ExpiryListItem>> {
     const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 100;
+    const pageSize = Math.min(query.pageSize ?? 100, 100);
     const now = Date.now();
     const in30 = new Date(now + 30 * DAY_MS);
     const in90 = new Date(now + 90 * DAY_MS);
@@ -56,7 +56,36 @@ export class ExpiryService {
     } else if (query.filter === 'lt90') {
       where.expiryDate = { gt: in30, lte: in90 };
     } else {
-      where.OR = [{ expiryDate: { lt: new Date() } }, { expiryDate: { lte: in90 } }];
+      // All risks: expiry buckets + isolated lots (quarantine / block)
+      where.OR = [
+        { expiryDate: { lt: new Date() } },
+        { expiryDate: { lte: in90 } },
+        { status: { in: [LotStatus.QUARANTINE, LotStatus.BLOCKED] } },
+      ];
+    }
+
+    if (query.status) {
+      const s = query.status.toLowerCase();
+      const statusWhere: Prisma.LotWhereInput[] = [];
+      if (s === 'карантин' || s === 'quarantine') {
+        statusWhere.push({ status: LotStatus.QUARANTINE });
+      } else if (s === 'блок' || s === 'blocked') {
+        statusWhere.push({ status: LotStatus.BLOCKED });
+      } else if (s === 'просрочено' || s === 'expired') {
+        statusWhere.push({ expiryDate: { lt: new Date() } });
+      } else if (s === 'критичный' || s === 'critical') {
+        statusWhere.push({ expiryDate: { gte: new Date(), lte: in30 } });
+      } else if (s === 'внимание' || s === 'warning') {
+        statusWhere.push({
+          OR: [
+            { expiryDate: { gt: in30, lte: in90 } },
+            { status: LotStatus.WARNING },
+          ],
+        });
+      }
+      if (statusWhere.length === 1) {
+        where.AND = [...(Array.isArray(where.AND) ? where.AND : where.AND ? [where.AND] : []), statusWhere[0]];
+      }
     }
 
     const [total, lots] = await Promise.all([
@@ -99,23 +128,12 @@ export class ExpiryService {
       };
     });
 
-    if (query.status) {
-      const s = query.status.toLowerCase();
-      items = items.filter(
-        (i) =>
-          i.status.toLowerCase() === s ||
-          i.uiStatus.toLowerCase() === s ||
-          (s === 'карантин' && i.lotDbStatus === LotStatus.QUARANTINE) ||
-          (s === 'блок' && i.lotDbStatus === LotStatus.BLOCKED),
-      );
-    }
-
     return {
       items: items.map(({ uiStatus: _u, lotDbStatus, ...rest }) => ({
         ...rest,
         lotDbStatus,
       })),
-      total: query.status ? items.length : total,
+      total,
       page,
       pageSize,
     };
@@ -127,7 +145,17 @@ export class ExpiryService {
     const in90 = new Date(now.getTime() + 90 * DAY_MS);
     const base = { inventoryRows: { some: { quantity: { gt: 0 } } } };
 
-    const [expired, lt30, lt90] = await Promise.all([
+    const riskWhere: Prisma.LotWhereInput = {
+      ...base,
+      expiryDate: { not: null },
+      OR: [
+        { expiryDate: { lt: now } },
+        { expiryDate: { lte: in90 } },
+        { status: { in: [LotStatus.QUARANTINE, LotStatus.BLOCKED] } },
+      ],
+    };
+
+    const [expired, lt30, lt90, restricted, total] = await Promise.all([
       this.prisma.lot.count({
         where: { ...base, expiryDate: { lt: now } },
       }),
@@ -137,8 +165,15 @@ export class ExpiryService {
       this.prisma.lot.count({
         where: { ...base, expiryDate: { gt: in30, lte: in90 } },
       }),
+      this.prisma.lot.count({
+        where: {
+          ...base,
+          status: { in: [LotStatus.QUARANTINE, LotStatus.BLOCKED] },
+        },
+      }),
+      this.prisma.lot.count({ where: riskWhere }),
     ]);
 
-    return { expired, lt30, lt90 };
+    return { expired, lt30, lt90, restricted, total };
   }
 }

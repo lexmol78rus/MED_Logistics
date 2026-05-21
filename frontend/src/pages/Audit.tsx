@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, GridReadyEvent } from 'ag-grid-community';
+import { createDefaultColDef, sharedGridOptions } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
 import { Download, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { toast } from 'sonner';
@@ -47,6 +48,8 @@ export default function Audit() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   const columnDefs = useMemo<ColDef<AuditLogItem>[]>(
     () => [
@@ -140,9 +143,11 @@ export default function Audit() {
         style={{ height: '100%', width: '100%' } as CSSProperties}
       >
         <AgGridReact
+          {...sharedGridOptions}
           ref={gridRef}
           rowData={rowData}
           columnDefs={columnDefs}
+          defaultColDef={defaultColDef}
           onGridReady={onGridReady}
           loading={loading}
           domLayout="normal"

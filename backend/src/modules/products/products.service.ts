@@ -15,6 +15,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
 import { CreateProductDto } from './dto/create-product.dto';
+import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 
 export type ProductListItem = {
@@ -36,6 +37,10 @@ export type ProductListItem = {
 export type ProductDetail = ProductListItem & {
   category: string | null;
   storageCond: string | null;
+};
+
+export type QuickCreateProductResult = ProductDetail & {
+  created: boolean;
 };
 
 @Injectable()
@@ -153,6 +158,76 @@ export class ProductsService {
 
     const created = await this.toListItem(product);
     return { ...created, category: null, storageCond: null };
+  }
+
+  async quickCreate(dto: QuickCreateProductDto): Promise<QuickCreateProductResult> {
+    const barcode = dto.barcode.trim();
+    const name = dto.name.trim();
+
+    const existingBarcode = await this.prisma.barcodeRecord.findUnique({
+      where: { barcode },
+      include: {
+        product: {
+          include: {
+            barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
+            lots: { select: { id: true, expiryDate: true } },
+            inventoryRows: { select: { quantity: true } },
+          },
+        },
+      },
+    });
+
+    if (existingBarcode?.product) {
+      const item = await this.toListItem(existingBarcode.product);
+      return { ...item, category: null, storageCond: null, created: false };
+    }
+
+    const sku = await this.resolveQuickCreateSku(dto.sku, barcode);
+    this.logger.log(`quick-create product sku=${sku} barcode=${barcode}`);
+
+    const product = await this.prisma.product.create({
+      data: {
+        sku,
+        name,
+        manufacturer: dto.manufacturer?.trim() || null,
+        barcodes: { create: { barcode } },
+      },
+      include: {
+        barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
+        lots: { select: { id: true, expiryDate: true } },
+        inventoryRows: { select: { quantity: true } },
+      },
+    });
+
+    await this.prisma.auditLog.create({
+      data: {
+        action: 'product.quick_create',
+        entityType: 'product',
+        entityId: product.id,
+        metadata: { sku: product.sku, name: product.name, barcode },
+      },
+    });
+
+    const created = await this.toListItem(product);
+    return { ...created, category: null, storageCond: null, created: true };
+  }
+
+  private async resolveQuickCreateSku(skuInput: string | undefined, barcode: string): Promise<string> {
+    if (skuInput?.trim()) {
+      const sku = skuInput.trim().toUpperCase();
+      const existing = await this.prisma.product.findUnique({ where: { sku } });
+      if (existing) throw new ConflictException('Артикул уже существует');
+      return sku;
+    }
+
+    const base = `BC-${barcode.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}`.slice(0, 56);
+    let candidate = base;
+    let suffix = 1;
+    while (await this.prisma.product.findUnique({ where: { sku: candidate } })) {
+      candidate = `${base}-${suffix}`;
+      suffix += 1;
+    }
+    return candidate;
   }
 
   async update(id: string, dto: UpdateProductDto, actorEmail?: string): Promise<ProductDetail> {

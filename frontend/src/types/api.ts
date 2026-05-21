@@ -39,6 +39,7 @@ export type MovementListItem = {
   id: string;
   date: string;
   type: string;
+  destination: string | null;
   productName: string;
   ref: string;
   lot: string | null;

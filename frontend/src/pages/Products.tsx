@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, GridReadyEvent, ICellRendererParams } from 'ag-grid-community';
+import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import {
+  COMPACT_GRID_HEADER_HEIGHT,
+  COMPACT_GRID_ROW_HEIGHT,
+  compactGridClassName,
+  compactGridThemeStyle,
+  createDefaultColDef,
+  lotsCountColumnDef,
+  sharedGridOptions,
+  stockQtyColumnDef,
+} from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
 import { Search, Download, Plus, Filter, Database, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
@@ -102,15 +111,8 @@ export default function Products() {
     { field: 'ref', headerName: 'REF', width: 130, pinned: 'left', cellClass: 'font-mono text-xs font-bold text-slate-600' },
     { field: 'name', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 200, cellClass: 'font-medium text-slate-800' },
     { field: 'manufacturer', headerName: 'ИЗГОТОВИТЕЛЬ', width: 160, cellClass: 'text-slate-600 text-xs' },
-    {
-      field: 'qty',
-      headerName: 'ОСТАТОК',
-      width: 110,
-      type: 'numericColumn',
-      cellClass: 'font-mono font-bold text-slate-900',
-      valueFormatter: (params) => (params.value as number).toLocaleString('ru-RU'),
-    },
-    { field: 'lots', headerName: 'ПАРТИЙ', width: 90, type: 'numericColumn', cellClass: 'text-slate-500 font-mono text-center' },
+    stockQtyColumnDef('qty'),
+    lotsCountColumnDef('lots'),
     {
       field: 'nearestExpiry',
       headerName: 'БЛИЖАЙШИЙ СРОК',
@@ -127,16 +129,7 @@ export default function Products() {
     { field: 'barcode', headerName: 'ШТРИХКОД', width: 130, cellClass: 'font-mono text-[10px] text-slate-400' },
   ], []);
 
-  const defaultColDef = useMemo(() => ({
-    sortable: true,
-    filter: true,
-    resizable: true,
-    suppressMovable: true,
-  }), []);
-
-  const onGridReady = (params: GridReadyEvent) => {
-    params.api.sizeColumnsToFit();
-  };
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
@@ -149,15 +142,6 @@ export default function Products() {
     setEditing(product);
     setDialogOpen(true);
   };
-
-  const gridThemeStyle = {
-    '--ag-header-background-color': '#f8fafc',
-    '--ag-header-foreground-color': '#64748b',
-    '--ag-font-size': '12px',
-    '--ag-font-family': 'inherit',
-    '--ag-borders-color': '#e2e8f0',
-    '--ag-row-hover-color': '#f1f5f9',
-  } as CSSProperties;
 
   return (
     <div className="h-full flex flex-col max-w-screen-2xl mx-auto gap-4">
@@ -293,8 +277,9 @@ export default function Products() {
               Загрузка...
             </div>
           )}
-          <div className="ag-theme-quartz absolute inset-0" style={gridThemeStyle}>
+          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
+              {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
               rowData={rowData}
@@ -316,9 +301,8 @@ export default function Products() {
                 }
                 if (e.data) openEdit(e.data);
               }}
-              rowHeight={40}
-              headerHeight={36}
-              onGridReady={onGridReady}
+              rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              headerHeight={COMPACT_GRID_HEADER_HEIGHT}
             />
           </div>
         </div>

@@ -5,9 +5,11 @@ import { playErrorSound, playScanSound, playSuccessSound } from './scanner-audio
 type ScannerHandlers = {
   onScan: (value: string) => void | Promise<void>;
   enabled?: boolean;
+  /** Clears controlled input after scan completes (not on Enter keydown). */
+  onClear?: () => void;
 };
 
-export function useScannerField({ onScan, enabled = true }: ScannerHandlers) {
+export function useScannerField({ onScan, enabled = true, onClear }: ScannerHandlers) {
   const inputRef = useRef<HTMLInputElement>(null);
   const lastScanRef = useRef<{ value: string; at: number } | null>(null);
   const queueRef = useRef<Promise<void>>(Promise.resolve());
@@ -15,7 +17,9 @@ export function useScannerField({ onScan, enabled = true }: ScannerHandlers) {
   const restoreFocus = useCallback(() => {
     const settings = loadSettings();
     if (!settings.scannerAutoFocus || !enabled) return;
-    requestAnimationFrame(() => inputRef.current?.focus());
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
   }, [enabled]);
 
   const enqueueScan = useCallback(
@@ -47,12 +51,13 @@ export function useScannerField({ onScan, enabled = true }: ScannerHandlers) {
             }
             throw new Error('scan failed');
           } finally {
+            onClear?.();
             restoreFocus();
           }
         })
         .catch(() => undefined);
     },
-    [onScan, restoreFocus],
+    [onScan, onClear, restoreFocus],
   );
 
   useEffect(() => {
@@ -61,9 +66,12 @@ export function useScannerField({ onScan, enabled = true }: ScannerHandlers) {
     if (!settings.scannerAutoFocus) return;
 
     const onKeyDown = (e: KeyboardEvent) => {
+      const tag = document.activeElement?.tagName;
       if (
-        document.activeElement?.tagName !== 'INPUT' &&
-        document.activeElement?.tagName !== 'TEXTAREA' &&
+        tag !== 'INPUT' &&
+        tag !== 'TEXTAREA' &&
+        tag !== 'SELECT' &&
+        !document.activeElement?.closest('.ag-popup, .ag-filter, .ag-menu, .ag-select-list') &&
         e.key.length === 1 &&
         !e.ctrlKey &&
         !e.metaKey &&
@@ -77,15 +85,15 @@ export function useScannerField({ onScan, enabled = true }: ScannerHandlers) {
   }, [enabled]);
 
   useEffect(() => {
+    if (!enabled) return;
     restoreFocus();
-  }, [restoreFocus]);
+  }, [enabled, restoreFocus]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
       e.preventDefault();
+      e.stopPropagation();
       enqueueScan(e.currentTarget.value);
-      e.currentTarget.value = '';
-      e.currentTarget.dispatchEvent(new Event('input', { bubbles: true }));
     }
   };
 

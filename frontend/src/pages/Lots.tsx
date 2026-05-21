@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, GridReadyEvent, ICellRendererParams } from 'ag-grid-community';
+import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import {
+  COMPACT_GRID_HEADER_HEIGHT,
+  COMPACT_GRID_ROW_HEIGHT,
+  centeredColumnDef,
+  compactGridClassName,
+  compactGridThemeStyle,
+  createDefaultColDef,
+  sharedGridOptions,
+  stockQtyColumnDef,
+} from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
 import { Boxes, Search, ShieldAlert, Ban, ChevronLeft, ChevronRight, ShieldCheck, Filter, Download } from 'lucide-react';
 import FilterDrawer from '../components/filters/FilterDrawer';
@@ -13,6 +22,7 @@ import { fetchLots, updateLotStatus } from '../lib/api/lots';
 import type { LotListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
 import { canManageLotStatus } from '../lib/rbac/permissions';
+import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
 import { useUserStore } from '../stores/userStore';
 
 const STATUS_FILTERS = [
@@ -121,7 +131,15 @@ export default function Lots() {
   }, [loadLots]);
 
   const columnDefs = useMemo<ColDef<LotListItem>[]>(() => [
-    { field: 'fefoRank', headerName: 'FEFO', width: 70, cellClass: 'font-mono text-xs font-bold text-blue-700 text-center' },
+    centeredColumnDef({
+      field: 'fefoRank',
+      headerName: 'FEFO',
+      width: 72,
+      minWidth: 72,
+      maxWidth: 72,
+      suppressSizeToFit: true,
+      cellClass: 'font-mono text-xs font-bold text-blue-700',
+    }),
     { field: 'ref', headerName: 'REF', width: 120, cellClass: 'font-mono text-xs font-bold text-slate-600' },
     { field: 'productName', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 180, cellClass: 'font-medium text-slate-800 text-xs' },
     { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 130, cellClass: 'font-mono text-xs font-bold' },
@@ -132,15 +150,10 @@ export default function Lots() {
       valueFormatter: (p) => (p.value as string | null) ?? 'Н/Д',
       cellClass: (params) => expiryCellClass(params.value as string | null),
     },
-    {
-      field: 'qty',
-      headerName: 'ОСТАТОК',
-      width: 100,
-      type: 'numericColumn',
-      cellClass: 'font-mono font-bold',
-      valueFormatter: (p) => (p.value as number).toLocaleString('ru-RU'),
-    },
-    { field: 'location', headerName: 'ЛОКАЦИЯ', width: 120, cellClass: 'text-xs text-slate-600', valueFormatter: (p) => (p.value as string | null) ?? '—' },
+    stockQtyColumnDef('qty'),
+    ...(SHOW_WAREHOUSE_LOCATIONS
+      ? [{ field: 'location' as const, headerName: 'ЛОКАЦИЯ', width: 120, cellClass: 'text-xs text-slate-600', valueFormatter: (p: { value: unknown }) => (p.value as string | null) ?? '—' }]
+      : []),
     {
       field: 'status',
       headerName: 'СТАТУС',
@@ -220,14 +233,9 @@ export default function Lots() {
       : []),
   ], [actionLotId, handleStatus, showLotActions]);
 
-  const defaultColDef = useMemo(() => ({
-    sortable: true,
-    resizable: true,
-    suppressMovable: true,
-  }), []);
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const gridThemeStyle = { '--ag-font-size': '12px' } as CSSProperties;
 
   return (
     <div className="h-full flex flex-col max-w-screen-2xl mx-auto gap-4">
@@ -303,16 +311,16 @@ export default function Lots() {
               Загрузка...
             </div>
           )}
-          <div className="ag-theme-quartz absolute inset-0" style={gridThemeStyle}>
+          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
+              {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
               rowData={rowData}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
-              rowHeight={44}
-              headerHeight={36}
-              onGridReady={(e: GridReadyEvent) => e.api.sizeColumnsToFit()}
+              rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              headerHeight={COMPACT_GRID_HEADER_HEIGHT}
             />
           </div>
         </div>

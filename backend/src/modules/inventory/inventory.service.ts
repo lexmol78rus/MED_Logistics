@@ -15,8 +15,12 @@ import { InventoryBalanceService } from './inventory-balance.service';
 import { InventoryValidationService } from './inventory-validation.service';
 import { ReceiveInventoryDto } from './dto/receive-inventory.dto';
 import { WriteoffInventoryDto } from './dto/writeoff-inventory.dto';
+import { resolveProductIdFromBarcode } from '../../common/barcode-lookup';
+import { normalizeScannedBarcode } from '../../common/barcode-normalize';
 import { WriteoffRecommendationQueryDto } from './dto/writeoff-recommendation-query.dto';
 import { computeInventoryBalance } from '../../common/utils/inventory-balance.util';
+import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
+import { WriteoffDestinationsService } from '../writeoff-destinations/writeoff-destinations.service';
 
 export type WriteoffLotRecommendation = {
   lotId: string;
@@ -44,6 +48,7 @@ export class InventoryService {
     private readonly balance: InventoryBalanceService,
     private readonly validation: InventoryValidationService,
     private readonly settings: SettingsService,
+    private readonly writeoffDestinations: WriteoffDestinationsService,
   ) {}
 
   async list(query: SearchPaginationQueryDto) {
@@ -155,30 +160,21 @@ export class InventoryService {
     let productId = query.productId;
 
     if (!productId && query.q) {
-      const scan = await this.scanner.process(query.q.trim());
-      if (scan.found && scan.product) {
-        productId = scan.product.id;
-      } else {
-        const product = await this.prisma.product.findFirst({
-          where: {
-            OR: [
-              { sku: { equals: query.q.trim(), mode: 'insensitive' } },
-              { name: { contains: query.q.trim(), mode: 'insensitive' } },
-            ],
-          },
-        });
-        productId = product?.id;
-      }
+      productId = await this.resolveProductIdByQuery(query.q);
     }
 
     if (!productId) throw new NotFoundException('Товар не найден');
+
+    const useFefo = query.useFefoRecommendations !== false;
 
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
       include: {
         lots: {
           include: { inventoryRows: true },
-          orderBy: [{ expiryDate: { sort: 'asc', nulls: 'last' } }, { lotNumber: 'asc' }],
+          orderBy: useFefo
+            ? [{ expiryDate: { sort: 'asc', nulls: 'last' } }, { lotNumber: 'asc' }]
+            : [{ lotNumber: 'asc' }],
         },
       },
     });
@@ -206,7 +202,7 @@ export class InventoryService {
       lot: lot.lotNumber,
       expiry: lot.expiryDate?.toISOString().slice(0, 10) ?? 'Н/Д',
       qty: available,
-      fefo: index === 0,
+      fefo: useFefo && index === 0,
     }));
 
     return {
@@ -219,23 +215,30 @@ export class InventoryService {
   }
 
   async writeoff(dto: WriteoffInventoryDto, actorEmail?: string, actorId?: string) {
-    this.logger.log(`writeoff productId=${dto.productId} lines=${dto.lines.length}`);
+    const destination = await this.writeoffDestinations.assertActiveDestination(
+      dto.writeOffDestinationId,
+    );
+    this.logger.log(
+      `writeoff productId=${dto.productId} destinationId=${destination.id} lines=${dto.lines.length}`,
+    );
     const product = await this.prisma.product.findUnique({
       where: { id: dto.productId },
     });
     if (!product) throw new NotFoundException('Товар не найден');
 
     const cfg = await this.settings.get();
-    const recommendation = await this.writeoffRecommendation({
-      productId: dto.productId,
-    });
+    const useFefo = dto.useFefoRecommendations !== false;
 
-    const fefoLotId = recommendation.lots.find((l) => l.fefo)?.lotId;
-    const nonFefoWithQty = dto.lines.filter(
-      (line) => line.lotId !== fefoLotId && line.quantity > 0,
-    );
-    if (cfg.fefoEnabled && cfg.fefoStrict && nonFefoWithQty.length > 0) {
-      if (fefoLotId && nonFefoWithQty[0]) {
+    if (useFefo && cfg.fefoEnabled) {
+      const recommendation = await this.writeoffRecommendation({
+        productId: dto.productId,
+        useFefoRecommendations: true,
+      });
+      const fefoLotId = recommendation.lots.find((l) => l.fefo)?.lotId;
+      const nonFefoWithQty = dto.lines.filter(
+        (line) => line.lotId !== fefoLotId && line.quantity > 0,
+      );
+      if (nonFefoWithQty.length > 0 && fefoLotId) {
         await this.validation.logFefoViolation(
           dto.productId,
           fefoLotId,
@@ -243,15 +246,6 @@ export class InventoryService {
           actorId,
         );
       }
-      throw new BadRequestException('Списание должно соблюдать FEFO — используйте рекомендованную партию');
-    }
-    if (cfg.fefoEnabled && !cfg.fefoStrict && nonFefoWithQty.length > 0 && fefoLotId) {
-      await this.validation.logFefoViolation(
-        dto.productId,
-        fefoLotId,
-        nonFefoWithQty[0].lotId,
-        actorId,
-      );
     }
 
     const result = await this.prisma.$transaction(async (tx) => {
@@ -309,6 +303,9 @@ export class InventoryService {
             type: MovementType.ISSUE,
             quantity: new Prisma.Decimal(line.quantity),
             actorEmail: actorEmail ?? null,
+            writeOffDestinationId: destination.id,
+            writeOffDestination: destination.legacyCode,
+            writeOffComment: dto.writeOffComment?.trim() || null,
           },
         });
         references.push(movement.reference);
@@ -320,7 +317,17 @@ export class InventoryService {
           action: 'inventory.writeoff',
           entityType: 'product',
           entityId: dto.productId,
-          metadata: { lines: JSON.parse(JSON.stringify(dto.lines)), references },
+          metadata: {
+            lines: JSON.parse(JSON.stringify(dto.lines)),
+            references,
+            writeOffDestinationId: destination.id,
+            writeOffDestinationLabel: resolveWriteoffDestinationLabel(
+              destination,
+              destination.legacyCode,
+              dto.writeOffComment,
+            ),
+            writeOffComment: dto.writeOffComment?.trim() || null,
+          },
         },
       });
 
@@ -333,5 +340,42 @@ export class InventoryService {
   private async nextReference(tx: Prisma.TransactionClient): Promise<string> {
     const count = await tx.stockMovement.count();
     return `ПЕР-${String(count + 1).padStart(4, '0')}`;
+  }
+
+  /** Поиск товара для списания: штрихкод, REF, GTIN (EAN), LOT, внутренний код (SKU). */
+  private async resolveProductIdByQuery(q: string): Promise<string | undefined> {
+    const candidates = normalizeScannedBarcode(q);
+    if (candidates.length === 0) return undefined;
+
+    const scan = await this.scanner.process(q);
+    if (scan.found && scan.product) return scan.product.id;
+    if (scan.found && scan.lot) return scan.lot.productId;
+
+    const fromBarcode = await resolveProductIdFromBarcode(
+      (args) => this.prisma.barcodeRecord.findFirst(args),
+      q,
+    );
+    if (fromBarcode) return fromBarcode;
+
+    for (const trimmed of candidates) {
+      const bySku = await this.prisma.product.findFirst({
+        where: {
+          OR: [
+            { sku: { equals: trimmed, mode: 'insensitive' } },
+            { sku: { equals: trimmed.toUpperCase(), mode: 'insensitive' } },
+          ],
+        },
+        select: { id: true },
+      });
+      if (bySku) return bySku.id;
+
+      const byLot = await this.prisma.lot.findFirst({
+        where: { lotNumber: { equals: trimmed, mode: 'insensitive' } },
+        select: { productId: true },
+      });
+      if (byLot) return byLot.productId;
+    }
+
+    return undefined;
   }
 }

@@ -27,4 +27,8 @@ export class MovementsQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   operator?: string;
+
+  @IsOptional()
+  @IsString()
+  writeOffDestinationId?: string;
 }

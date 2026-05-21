@@ -18,6 +18,7 @@ import { enqueueRetry } from '../lib/ops/retry-queue';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
 import { canReceive, canWriteoff } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
+import DestinationSelect from '../components/writeoff/DestinationSelect';
 
 type TerminalMode = 'receive' | 'writeoff' | 'lot' | 'product';
 
@@ -36,6 +37,8 @@ export default function Terminal() {
   const [pendingWriteoff, setPendingWriteoff] = useState<{ lotId: string; quantity: number } | null>(
     null,
   );
+  const [writeoffDestinationId, setWriteoffDestinationId] = useState('');
+  const [writeoffComment, setWriteoffComment] = useState('');
 
   const showStatus = (ok: boolean, msg: string) => {
     setStatus(ok ? 'ok' : 'err');
@@ -75,7 +78,7 @@ export default function Terminal() {
 
   const { inputRef, handleKeyDown, restoreFocus } = useScannerField({
     onScan: handleScan,
-    enabled: true,
+    onClear: () => setScanValue(''),
   });
 
   const submitReceive = async () => {
@@ -118,6 +121,10 @@ export default function Terminal() {
       showStatus(false, 'Нет прав на списание');
       return;
     }
+    if (!writeoffDestinationId) {
+      showStatus(false, 'Выберите «Куда списываем»');
+      return;
+    }
     const q = scanValue.trim();
     if (!q && !productId) {
       showStatus(false, 'Сканируйте товар');
@@ -146,6 +153,8 @@ export default function Terminal() {
     const run = async () => {
       await writeoffInventory({
         productId,
+        writeOffDestinationId: writeoffDestinationId,
+        writeOffComment: writeoffComment.trim() || undefined,
         lines: [pendingWriteoff],
       });
       showStatus(true, 'Списание выполнено');
@@ -265,13 +274,29 @@ export default function Terminal() {
           </Button>
         )}
         {mode === 'writeoff' && (
-          <Button
-            type="button"
-            className="h-16 text-lg font-bold uppercase bg-red-600 hover:bg-red-500"
-            onClick={() => void prepareWriteoff()}
-          >
-            Списать FEFO
-          </Button>
+          <>
+            <DestinationSelect
+              value={writeoffDestinationId}
+              onChange={setWriteoffDestinationId}
+              selectClassName="h-12 text-base bg-slate-900 border-slate-600 text-slate-100"
+              placeholder="Куда списываем *"
+            />
+            <input
+              type="text"
+              placeholder="Комментарий (необязательно)"
+              value={writeoffComment}
+              onChange={(e) => setWriteoffComment(e.target.value)}
+              className="h-12 px-3 text-lg bg-slate-900 border border-slate-600 rounded-lg"
+            />
+            <Button
+              type="button"
+              className="h-16 text-lg font-bold uppercase bg-red-600 hover:bg-red-500 disabled:opacity-50"
+              disabled={!writeoffDestinationId}
+              onClick={() => void prepareWriteoff()}
+            >
+              Списать FEFO
+            </Button>
+          </>
         )}
       </div>
 

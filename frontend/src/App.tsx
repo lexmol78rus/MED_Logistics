@@ -17,6 +17,7 @@ import WriteOff from './pages/WriteOff';
 import ExpiryControl from './pages/ExpiryControl';
 import RecallManagement from './pages/RecallManagement';
 import Settings from './pages/Settings';
+import WriteOffDestinations from './pages/WriteOffDestinations';
 import Users from './pages/Users';
 import Audit from './pages/Audit';
 import Terminal from './pages/Terminal';
@@ -51,6 +52,7 @@ export default function App() {
                 <Route path="/expiry-control" element={<ExpiryControl />} />
                 <Route path="/recall" element={<RecallManagement />} />
                 <Route path="/settings" element={<Settings />} />
+                <Route path="/settings/writeoff-destinations" element={<WriteOffDestinations />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/audit" element={<Audit />} />
               </Route>

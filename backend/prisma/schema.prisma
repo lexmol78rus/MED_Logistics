@@ -149,21 +149,40 @@ model BarcodeRecord {
   @@map("barcode_records")
 }
 
-model StockMovement {
-  id         String       @id @default(cuid())
-  reference  String       @unique
-  productId  String       @map("product_id")
-  lotId      String?      @map("lot_id")
-  type       MovementType
-  quantity   Decimal      @db.Decimal(18, 4)
-  actorEmail String?      @map("actor_email")
-  createdAt  DateTime     @default(now()) @map("created_at")
+model WriteOffDestination {
+  id         String   @id @default(cuid())
+  name       String
+  type       String?
+  isActive   Boolean  @default(true) @map("is_active")
+  legacyCode String?  @unique @map("legacy_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
 
-  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  lot     Lot?    @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  movements StockMovement[]
+
+  @@map("write_off_destinations")
+}
+
+model StockMovement {
+  id                    String       @id @default(cuid())
+  reference             String       @unique
+  productId             String       @map("product_id")
+  lotId                 String?      @map("lot_id")
+  type                  MovementType
+  quantity              Decimal      @db.Decimal(18, 4)
+  actorEmail            String?      @map("actor_email")
+  writeOffDestinationId String?      @map("write_off_destination_id")
+  writeOffDestination   String?      @map("write_off_destination")
+  writeOffComment       String?      @map("write_off_comment")
+  createdAt             DateTime     @default(now()) @map("created_at")
+
+  product     Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lot         Lot?                 @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  destination WriteOffDestination? @relation(fields: [writeOffDestinationId], references: [id], onDelete: SetNull)
 
   @@index([productId, createdAt])
   @@index([createdAt])
+  @@index([writeOffDestinationId])
   @@map("stock_movements")
 }
 

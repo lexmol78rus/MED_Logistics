@@ -1,10 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Box, QrCode, Factory, Activity, Edit, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, GridReadyEvent, ICellRendererParams } from 'ag-grid-community';
+import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import {
+  COMPACT_GRID_HEADER_HEIGHT,
+  COMPACT_GRID_ROW_HEIGHT,
+  compactGridClassName,
+  compactGridThemeStyle,
+  createDefaultColDef,
+  sharedGridOptions,
+  stockQtyColumnDef,
+} from '../lib/agGrid/gridPreset';
 import { toast } from 'sonner';
 import ProductFormDialog from '../components/products/ProductFormDialog';
 import { fetchProduct } from '../lib/api/products';
@@ -15,9 +23,10 @@ import { ApiError } from '../lib/api/client';
 import { canEditProduct } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { loadSettings } from '../lib/settings/storage';
+import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
 
 type LotRow = {
-  lotArea: string;
+  lotArea?: string;
   lot: string;
   mfgDate: string;
   expiryDate: string;
@@ -61,8 +70,8 @@ export default function ProductDetails() {
       setLotsRaw(lotsRes.items);
       setLotsData(
         lotsRes.items.map((lot: LotListItem) => ({
-          lotArea: lot.location ?? '—',
           lot: lot.lot,
+          ...(SHOW_WAREHOUSE_LOCATIONS ? { lotArea: lot.location ?? '—' } : {}),
           mfgDate: '—',
           expiryDate: lot.expiryDate ?? 'Н/Д',
           qty: lot.qty,
@@ -90,15 +99,10 @@ export default function ProductDetails() {
   const lotsColDef = useMemo<ColDef<LotRow>[]>(
     () => [
       { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 140, cellClass: 'font-mono text-[11px] font-bold text-slate-700' },
-      { field: 'lotArea', headerName: 'ЯЧЕЙКА / ЛОКАЦИЯ', flex: 1, minWidth: 120, cellClass: 'text-xs' },
-      {
-        field: 'qty',
-        headerName: 'ОСТАТОК',
-        width: 110,
-        type: 'numericColumn',
-        cellClass: 'font-mono font-bold text-slate-900',
-        valueFormatter: (p) => (p.value as number).toLocaleString('ru-RU'),
-      },
+      ...(SHOW_WAREHOUSE_LOCATIONS
+        ? [{ field: 'lotArea' as const, headerName: 'ЯЧЕЙКА / ЛОКАЦИЯ', flex: 1, minWidth: 120, cellClass: 'text-xs' }]
+        : []),
+      stockQtyColumnDef('qty'),
       { field: 'expiryDate', headerName: 'ГОДЕН ДО', width: 120, cellClass: 'text-[11px] font-mono' },
       {
         field: 'status',
@@ -123,10 +127,7 @@ export default function ProductDetails() {
     [],
   );
 
-  const defaultColDef = useMemo(
-    () => ({ sortable: true, resizable: true, suppressMovable: true }),
-    [],
-  );
+  const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
   if (loading || !product) {
     return (
@@ -248,23 +249,15 @@ export default function ProductDetails() {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Партии (LOT)</h3>
           </div>
           <div className="flex-1 relative min-h-[200px]">
-            <div
-              className="ag-theme-quartz absolute inset-0"
-              style={
-                {
-                  '--ag-header-background-color': '#f8fafc',
-                  '--ag-font-size': '11px',
-                } as CSSProperties
-              }
-            >
+            <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
               <AgGridReact
+                {...sharedGridOptions}
                 theme="legacy"
                 rowData={lotsData}
                 columnDefs={lotsColDef}
                 defaultColDef={defaultColDef}
-                rowHeight={36}
-                headerHeight={32}
-                onGridReady={(params: GridReadyEvent) => params.api.sizeColumnsToFit()}
+                rowHeight={COMPACT_GRID_ROW_HEIGHT}
+                headerHeight={COMPACT_GRID_HEADER_HEIGHT}
               />
             </div>
           </div>

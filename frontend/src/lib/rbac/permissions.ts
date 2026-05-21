@@ -25,6 +25,7 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/expiry-control': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/recall': ['ADMIN', 'MANAGER'],
   '/settings': ['ADMIN'],
+  '/settings/writeoff-destinations': ['ADMIN'],
   '/users': ['ADMIN'],
   '/audit': ['ADMIN'],
   '/terminal': ['ADMIN', 'MANAGER', 'OPERATOR'],
@@ -43,6 +44,11 @@ export function canAccessRoute(role: UserRole | null, path: string): boolean {
 
 export function canCreateProduct(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** Быстрое создание товара прямо из приёмки (в т.ч. для оператора) */
+export function canQuickCreateProduct(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
 }
 
 export function canEditProduct(role: UserRole | null): boolean {

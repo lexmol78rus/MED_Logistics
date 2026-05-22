@@ -448,6 +448,18 @@
   background: #f8fafc;
 }
 
+/* Edit write-off — muted danger, visible on white footer (Tailwind red-50 is too pale) */
+.movements-grid .movement-group-detail .movement-edit-writeoff-btn[data-slot='button'] {
+  border-color: #fca5a5;
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+.movements-grid .movement-group-detail .movement-edit-writeoff-btn[data-slot='button']:hover {
+  border-color: #f87171;
+  background-color: #fecaca;
+  color: #991b1b;
+}
+
 .movements-grid .movement-group-expand-cell {
   padding-left: 4px !important;
   padding-right: 0 !important;

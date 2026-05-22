@@ -130,7 +130,7 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
             type="button"
             variant="outline"
             size="sm"
-            className="h-8 w-full text-xs"
+            className="movement-edit-writeoff-btn h-8 w-full text-xs"
             onClick={(e) => {
               e.stopPropagation();
               onEdit();

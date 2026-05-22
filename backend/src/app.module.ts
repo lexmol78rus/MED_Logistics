@@ -26,6 +26,7 @@ import { ExpiryModule } from './modules/expiry/expiry.module';
 import { ExportModule } from './modules/export/export.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { WriteoffDestinationsModule } from './modules/writeoff-destinations/writeoff-destinations.module';
+import { ExpectedReceiptsModule } from './modules/expected-receipts/expected-receipts.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { WriteoffDestinationsModule } from './modules/writeoff-destinations/writ
     ExportModule,
     SettingsModule,
     WriteoffDestinationsModule,
+    ExpectedReceiptsModule,
   ],
   providers: [
     {

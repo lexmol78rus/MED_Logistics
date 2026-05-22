@@ -3,6 +3,9 @@ import { apiFetch, buildQuery } from './client';
 export type AuditLogItem = {
   id: string;
   actorId: string | null;
+  /** Имя для отображения (displayName или из email) */
+  actorDisplayName?: string | null;
+  actorEmail?: string | null;
   action: string;
   entityType: string;
   entityId: string | null;

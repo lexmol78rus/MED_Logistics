@@ -3,14 +3,22 @@ import type { ExpiryListItem } from '../../lib/api/expiry';
 type BadgeVariant = 'expired' | 'critical' | 'warning' | 'quarantine' | 'blocked';
 
 const VARIANT_CLASS: Record<BadgeVariant, string> = {
-  expired: 'bg-rose-600 text-white border-rose-700',
-  critical: 'bg-red-100 text-red-800 border-red-200',
+  expired: 'bg-rose-900 text-white border-rose-950',
+  critical: 'bg-orange-500 text-white border-orange-600',
   warning: 'bg-amber-100 text-amber-800 border-amber-200',
   quarantine: 'bg-amber-50 text-amber-900 border-amber-300',
   blocked: 'bg-red-600 text-white border-red-700',
 };
 
-function resolveVariant(row: Pick<ExpiryListItem, 'status' | 'lotDbStatus'>): {
+export const CRITICAL_DAYS_BADGE_CLASS: Record<BadgeVariant, string> = {
+  expired: 'bg-rose-900',
+  critical: 'bg-orange-500',
+  blocked: 'bg-red-600',
+  warning: 'bg-amber-500',
+  quarantine: 'bg-amber-500',
+};
+
+export function resolveExpiryStatusVariant(row: Pick<ExpiryListItem, 'status' | 'lotDbStatus'>): {
   variant: BadgeVariant;
   label: string;
 } {
@@ -30,7 +38,7 @@ function resolveVariant(row: Pick<ExpiryListItem, 'status' | 'lotDbStatus'>): {
 }
 
 export function ExpiryStatusBadge({ row }: { row: ExpiryListItem }) {
-  const { variant, label } = resolveVariant(row);
+  const { variant, label } = resolveExpiryStatusVariant(row);
 
   return (
     <div className="expiry-status-cell flex h-full w-full items-center">

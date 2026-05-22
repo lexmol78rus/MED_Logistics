@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Box, QrCode, Factory, Activity, Edit, AlertTriangle } from 'lucide-react';
+import ProductExpectedReceiptsTab from '../components/products/ProductExpectedReceiptsTab';
 import { Button } from '@/components/ui/button';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, ICellRendererParams } from 'ag-grid-community';
 import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
-  compactGridClassName,
+  badgeColumnDef,
+  compactColumnDef,
   compactGridThemeStyle,
   createDefaultColDef,
+  flexTextColumnDef,
+  listGridClassName,
   sharedGridOptions,
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
@@ -40,6 +44,7 @@ const TABS = [
   { id: 'movements', label: 'Движения' },
   { id: 'expiry', label: 'Сроки' },
   { id: 'writeoff', label: 'Списания' },
+  { id: 'ordered', label: 'Заказано' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -98,16 +103,29 @@ export default function ProductDetails() {
 
   const lotsColDef = useMemo<ColDef<LotRow>[]>(
     () => [
-      { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 140, cellClass: 'font-mono text-[11px] font-bold text-slate-700' },
+      flexTextColumnDef({
+        field: 'lot',
+        headerName: 'LOT / ПАРТИЯ',
+        minWidth: 100,
+        maxWidth: SHOW_WAREHOUSE_LOCATIONS ? 150 : undefined,
+        cellClass: 'font-mono text-[11px] font-bold text-slate-700',
+      }, SHOW_WAREHOUSE_LOCATIONS ? 1 : 3),
       ...(SHOW_WAREHOUSE_LOCATIONS
-        ? [{ field: 'lotArea' as const, headerName: 'ЯЧЕЙКА / ЛОКАЦИЯ', flex: 1, minWidth: 120, cellClass: 'text-xs' }]
+        ? [flexTextColumnDef({ field: 'lotArea' as const, headerName: 'ЯЧЕЙКА / ЛОКАЦИЯ', minWidth: 120, cellClass: 'text-xs' }, 2)]
         : []),
       stockQtyColumnDef('qty'),
-      { field: 'expiryDate', headerName: 'ГОДЕН ДО', width: 120, cellClass: 'text-[11px] font-mono' },
-      {
+      compactColumnDef({
+        field: 'expiryDate',
+        headerName: 'ГОДЕН ДО',
+        minWidth: 100,
+        maxWidth: 130,
+        cellClass: 'text-[11px] font-mono',
+      }),
+      badgeColumnDef({
         field: 'status',
         headerName: 'СТАТУС',
-        width: 100,
+        minWidth: 120,
+        filter: false,
         cellRenderer: (params: ICellRendererParams<LotRow>) => {
           const s = params.value as string;
           const color =
@@ -117,12 +135,12 @@ export default function ProductDetails() {
                 ? 'text-red-700 bg-red-50 border-red-200'
                 : 'text-amber-700 bg-amber-50 border-amber-200';
           return (
-            <div className="flex items-center h-full">
-              <span className={`px-1.5 py-0.5 border rounded text-[8px] uppercase tracking-wider font-bold ${color}`}>{s}</span>
+            <div className="flex items-center h-full w-full min-w-0 overflow-hidden">
+              <span className={`shrink-0 px-1.5 py-0.5 border rounded text-[8px] uppercase tracking-wider font-bold whitespace-nowrap ${color}`}>{s}</span>
             </div>
           );
         },
-      },
+      }),
     ],
     [],
   );
@@ -249,7 +267,7 @@ export default function ProductDetails() {
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-700">Партии (LOT)</h3>
           </div>
           <div className="flex-1 relative min-h-[200px]">
-            <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
+            <div className={`${listGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
               <AgGridReact
                 {...sharedGridOptions}
                 theme="legacy"
@@ -325,6 +343,10 @@ export default function ProductDetails() {
             ))
           )}
         </div>
+      )}
+
+      {tab === 'ordered' && id && (
+        <ProductExpectedReceiptsTab productId={id} userRole={userRole} />
       )}
 
       <ProductFormDialog open={editOpen} product={product} onClose={() => setEditOpen(false)} onSaved={loadProductCard} />

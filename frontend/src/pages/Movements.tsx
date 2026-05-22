@@ -1,28 +1,56 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import { ColDef, ICellRendererParams, RowClickedEvent } from 'ag-grid-community';
 import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
-  GRID_NUMERIC_COLUMN_WIDTH,
+  badgeColumnDef,
+  compactColumnDef,
   compactGridClassName,
   compactGridThemeStyle,
+  centeredColumnDef,
   createDefaultColDef,
+  flexTextColumnDef,
+  GRID_FLEX_NARROW,
   numericColumnDef,
+  primaryTextColumnDef,
+  refColumnDef,
   sharedGridOptions,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
-import { ArrowRightLeft, Search, ChevronLeft, ChevronRight, Download, Filter } from 'lucide-react';
+import { ArrowRightLeft, Search, Download, Filter } from 'lucide-react';
+import { MovementTypeBadge } from '../components/movements/MovementTypeBadge';
+import { WriteOffDestinationBadge } from '../components/movements/WriteOffDestinationBadge';
+import { MovementExpiryLabel } from '../components/movements/MovementExpiryLabel';
+import { resolveMovementExpiryTone } from '../lib/movements/expiryDisplay';
+import { MovementGroupMasterCell } from '../components/movements/MovementGroupMasterCell';
+import { MovementGroupExpandIcon } from '../components/movements/MovementGroupExpandIcon';
+import { MovementGroupDetailRenderer } from '../components/movements/MovementGroupDetailRenderer';
+import { MAX_PAGE_SIZE } from '../lib/pagination';
 import FilterDrawer from '../components/filters/FilterDrawer';
 import { downloadExport } from '../lib/export/download';
-import { canExport } from '../lib/rbac/permissions';
+import { canEditWriteoffGroup, canExport } from '../lib/rbac/permissions';
+import WriteoffGroupEditPanel from '../components/movements/WriteoffGroupEditPanel';
+import type { MovementGroupDetailRendererContext } from '../components/movements/MovementGroupDetailRenderer';
 import { useUserStore } from '../stores/userStore';
 import { toast } from 'sonner';
 import { fetchMovements } from '../lib/api/movements';
 import { fetchWriteoffDestinations } from '../lib/api/writeoff-destinations';
+import {
+  buildUsersByEmail,
+  fetchAllUsersForLookup,
+  formatOperatorField,
+  resolveOperatorDisplay,
+} from '../lib/users/operatorDisplay';
 import type { WriteoffDestinationItem } from '../lib/api/writeoff-destinations';
 import type { MovementListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
+import {
+  buildMovementGridRows,
+  collectGroupFieldText,
+  isGroupMasterRow,
+  type MovementGridRow,
+} from '../lib/movements/groupMovements';
 
 const MOVEMENT_TYPES = [
   { value: '', label: 'Все типы' },
@@ -33,32 +61,32 @@ const MOVEMENT_TYPES = [
   { value: 'ADJUSTMENT', label: 'КОРРЕКТИРОВКА' },
 ];
 
-function typeBadgeClass(type: string): string {
-  switch (type) {
-    case 'ПРИХОД':
-      return 'bg-emerald-50 text-emerald-700 border-emerald-200';
-    case 'РАСХОД':
-      return 'bg-blue-50 text-blue-700 border-blue-200';
-    case 'КАРАНТИН':
-      return 'bg-amber-50 text-amber-800 border-amber-200';
-    case 'РАЗБЛОКИРОВКА':
-      return 'bg-violet-50 text-violet-700 border-violet-200';
-    case 'КОРРЕКТИРОВКА':
-      return 'bg-slate-100 text-slate-700 border-slate-300';
-    default:
-      return 'bg-slate-100 text-slate-700 border-slate-300';
-  }
+function movementQtyTone(value: unknown): 'in' | 'out' | 'zero' | 'neutral' {
+  const qty = String(value ?? '');
+  if (qty === '0') return 'zero';
+  if (qty.startsWith('+')) return 'in';
+  if (qty.startsWith('-')) return 'out';
+  return 'neutral';
 }
 
-function qtyClass(qty: string): string {
-  if (qty.startsWith('+')) return 'font-mono text-xs font-bold text-emerald-600';
-  if (qty.startsWith('-')) return 'font-mono text-xs font-bold text-red-600';
-  return 'font-mono text-xs font-bold text-slate-600';
+function movementField(
+  row: MovementGridRow | undefined,
+  field: keyof MovementListItem,
+): string | null {
+  if (!row) return null;
+  if (row.rowType === 'group-master' && row.groupItems) {
+    return collectGroupFieldText(row.groupItems, (item) => {
+      const value = item[field];
+      return typeof value === 'string' ? value : value ?? '';
+    });
+  }
+  const value = row.movement[field];
+  return typeof value === 'string' ? value : value ?? null;
 }
 
 export default function Movements() {
   const userRole = useUserStore((s) => s.user?.role ?? null);
-  const gridRef = useRef<AgGridReact<MovementListItem>>(null);
+  const gridRef = useRef<AgGridReact<MovementGridRow>>(null);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
@@ -70,11 +98,28 @@ export default function Movements() {
   const [appliedOperator, setAppliedOperator] = useState('');
   const [appliedDestinationId, setAppliedDestinationId] = useState('');
   const [destinations, setDestinations] = useState<WriteoffDestinationItem[]>([]);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
-  const [rowData, setRowData] = useState<MovementListItem[]>([]);
+  const [items, setItems] = useState<MovementListItem[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [editGroup, setEditGroup] = useState<MovementGridRow | null>(null);
+  const [usersByEmail, setUsersByEmail] = useState(
+    () => new Map<string, { email: string; displayName: string | null }>(),
+  );
+
+  const gridRows = useMemo(
+    () => buildMovementGridRows(items, expandedGroups),
+    [items, expandedGroups],
+  );
+
+  useEffect(() => {
+    const api = gridRef.current?.api;
+    if (!api) return;
+    const raf = requestAnimationFrame(() => {
+      api.onRowHeightChanged();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [gridRows, expandedGroups]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
@@ -87,12 +132,32 @@ export default function Movements() {
       .catch(() => setDestinations([]));
   }, []);
 
+  useEffect(() => {
+    void fetchAllUsersForLookup()
+      .then((users) => setUsersByEmail(buildUsersByEmail(users)))
+      .catch(() => setUsersByEmail(new Map()));
+  }, []);
+
+  useEffect(() => {
+    const api = gridRef.current?.api;
+    if (!api || usersByEmail.size === 0) return;
+    api.refreshCells({ columns: ['movement.user'], force: true });
+    requestAnimationFrame(() => {
+      api.onRowHeightChanged();
+    });
+  }, [usersByEmail]);
+
+  const formatOperator = useCallback(
+    (email: string | null | undefined) => resolveOperatorDisplay(email, usersByEmail),
+    [usersByEmail],
+  );
+
   const loadMovements = useCallback(async () => {
     setLoading(true);
     try {
       const data = await fetchMovements({
-        page,
-        pageSize,
+        page: 1,
+        pageSize: MAX_PAGE_SIZE,
         search: debouncedSearch || undefined,
         type: typeFilter || undefined,
         from: fromDate || undefined,
@@ -100,61 +165,258 @@ export default function Movements() {
         operator: appliedOperator || undefined,
         writeOffDestinationId: appliedDestinationId || undefined,
       });
-      setRowData(data.items);
+      setItems(data.items);
+      setExpandedGroups(new Set());
       setTotal(data.total);
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Не удалось загрузить движения');
-      setRowData([]);
+      setItems([]);
       setTotal(0);
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, typeFilter, fromDate, toDate, appliedOperator, appliedDestinationId]);
+  }, [debouncedSearch, typeFilter, fromDate, toDate, appliedOperator, appliedDestinationId]);
 
   useEffect(() => {
     void loadMovements();
   }, [loadMovements]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, typeFilter, fromDate, toDate, appliedOperator, appliedDestinationId]);
+  const toggleGroup = useCallback((groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }, []);
 
-  const columnDefs = useMemo<ColDef<MovementListItem>[]>(() => [
-    { field: 'id', headerName: 'ДОКУМЕНТ', width: 110, cellClass: 'font-mono text-xs font-bold text-blue-700' },
-    { field: 'date', headerName: 'ДАТА / ВРЕМЯ', width: 150, cellClass: 'font-mono text-xs text-slate-600' },
-    {
-      field: 'type',
-      headerName: 'ТИП',
-      width: 130,
-      cellRenderer: (params: ICellRendererParams<MovementListItem>) => {
-        const type = params.value as string;
-        return (
-          <span className={`px-1.5 py-0.5 border rounded text-[8px] font-bold uppercase ${typeBadgeClass(type)}`}>
-            {type}
-          </span>
-        );
-      },
+  const onRowClicked = useCallback(
+    (event: RowClickedEvent<MovementGridRow>) => {
+      const row = event.data;
+      if (!isGroupMasterRow(row) || !row.groupKey) return;
+      toggleGroup(row.groupKey);
     },
-    { field: 'ref', headerName: 'REF', width: 110, cellClass: 'font-mono text-xs' },
-    { field: 'productName', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 160, cellClass: 'text-xs font-medium' },
-    { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 120, cellClass: 'font-mono text-xs', valueFormatter: (p) => (p.value as string | null) ?? '—' },
-    numericColumnDef({
-      field: 'qty',
-      headerName: 'КОЛ-ВО',
-      width: GRID_NUMERIC_COLUMN_WIDTH,
-      valueFormatter: (p) => String(p.value ?? ''),
-      cellClass: (params) => `ag-cell-movement-qty ${qtyClass(params.value as string)}`,
+    [toggleGroup],
+  );
+
+  const columnDefs = useMemo<ColDef<MovementGridRow>[]>(() => [
+    compactColumnDef({
+      colId: 'expand',
+      headerName: '',
+      width: 36,
+      minWidth: 36,
+      maxWidth: 36,
+      flex: 0,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      cellClass: 'movement-group-expand-cell',
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => {
+        if (!isGroupMasterRow(params.data)) return null;
+        const expanded = expandedGroups.has(params.data!.groupKey!);
+        return <MovementGroupExpandIcon expanded={expanded} />;
+      },
     }),
-    { field: 'user', headerName: 'ОПЕРАТОР', width: 160, cellClass: 'text-xs text-slate-500' },
-  ], []);
+    compactColumnDef({
+      field: 'movement.id',
+      headerName: 'ДОКУМЕНТ',
+      minWidth: 90,
+      maxWidth: 120,
+      cellClass: 'font-mono text-xs font-bold text-blue-700',
+      valueGetter: (p) => movementField(p.data, 'id'),
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => {
+        if (isGroupMasterRow(params.data) && params.data?.groupItems) {
+          const first = params.data.groupItems[0].id;
+          const extra = params.data.groupItems.length - 1;
+          return (
+            <span className="font-mono text-xs font-bold text-blue-700">
+              {first}
+              {extra > 0 && (
+                <span className="ml-1 font-sans font-semibold text-slate-400">+{extra}</span>
+              )}
+            </span>
+          );
+        }
+        return params.value;
+      },
+    }),
+    compactColumnDef({
+      field: 'movement.date',
+      headerName: 'ДАТА / ВРЕМЯ',
+      minWidth: 120,
+      maxWidth: 160,
+      cellClass: 'font-mono text-xs text-slate-600',
+      valueGetter: (p) => movementField(p.data, 'date'),
+    }),
+    centeredColumnDef({
+      field: 'movement.type',
+      headerName: 'ТИП',
+      flex: 0.85,
+      minWidth: 132,
+      maxWidth: 160,
+      cellClass: 'movement-type-cell',
+      filter: false,
+      sortable: true,
+      valueGetter: (p) => p.data?.movement.type,
+      tooltipValueGetter: () => null,
+      cellStyle: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'visible',
+        paddingLeft: '4px',
+        paddingRight: '4px',
+      },
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => (
+        <MovementTypeBadge type={String(params.data?.movement.type ?? '')} />
+      ),
+    }),
+    badgeColumnDef({
+      field: 'movement.destination',
+      headerName: 'НАЗНАЧЕНИЕ СПИСАНИЯ',
+      flex: 1.75,
+      minWidth: 200,
+      cellClass: 'movement-destination-cell',
+      valueGetter: (p) => movementField(p.data, 'destination'),
+      cellStyle: {
+        display: 'flex',
+        alignItems: 'center',
+        overflow: 'hidden',
+        paddingLeft: '4px',
+        paddingRight: '4px',
+      },
+      tooltipValueGetter: () => null,
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => (
+        <WriteOffDestinationBadge destination={movementField(params.data, 'destination')} />
+      ),
+    }),
+    refColumnDef({
+      field: 'movement.ref',
+      headerName: 'REF',
+      minWidth: 150,
+      cellClass: 'font-mono text-xs',
+      valueGetter: (p) => movementField(p.data, 'ref'),
+      valueFormatter: (p) => (isGroupMasterRow(p.data) ? '—' : String(p.value ?? '')),
+    }),
+    flexTextColumnDef({
+      field: 'movement.lot',
+      headerName: 'LOT / ПАРТИЯ',
+      minWidth: 100,
+      maxWidth: 140,
+      cellClass: 'font-mono text-xs',
+      valueGetter: (p) => movementField(p.data, 'lot'),
+      valueFormatter: (p) => {
+        if (isGroupMasterRow(p.data)) return '—';
+        return (p.value as string | null) ?? '—';
+      },
+    }, GRID_FLEX_NARROW),
+    primaryTextColumnDef({
+      field: 'movement.productName',
+      headerName: 'НОМЕНКЛАТУРА',
+      minWidth: 260,
+      cellClass: 'text-xs font-medium',
+      valueGetter: (p) => movementField(p.data, 'productName'),
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => {
+        if (isGroupMasterRow(params.data) && params.data?.groupItems) {
+          return <MovementGroupMasterCell row={params.data} />;
+        }
+        return params.value;
+      },
+    }),
+    compactColumnDef({
+      field: 'movement.expiryDate',
+      headerName: 'СРОК ГОДНОСТИ',
+      flex: 0.95,
+      minWidth: 112,
+      maxWidth: 130,
+      cellClass: 'movement-expiry-cell',
+      valueGetter: (p) => (isGroupMasterRow(p.data) ? null : p.data?.movement.expiryDate ?? null),
+      valueFormatter: (p) => {
+        if (isGroupMasterRow(p.data)) return '—';
+        const v = p.value as string | null;
+        return v?.trim() ? v : '—';
+      },
+      tooltipValueGetter: () => null,
+      cellClassRules: {
+        'movement-expiry-empty-tone': (p) =>
+          !isGroupMasterRow(p.data) && resolveMovementExpiryTone(p.data?.movement.expiryDate) === 'empty',
+      },
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => {
+        if (isGroupMasterRow(params.data)) {
+          return <span className="movement-expiry-empty text-xs">—</span>;
+        }
+        return <MovementExpiryLabel expiryDate={params.data?.movement.expiryDate} />;
+      },
+    }),
+    numericColumnDef({
+      field: 'movement.qty',
+      headerName: 'КОЛ-ВО',
+      valueGetter: (p) => movementField(p.data, 'qty'),
+      valueFormatter: (p) => {
+        if (isGroupMasterRow(p.data) && p.data?.groupItems) {
+          return `${p.data.groupItems.length} поз.`;
+        }
+        return String(p.value ?? '');
+      },
+      cellClass: 'ag-cell-movement-qty',
+      cellClassRules: {
+        'movement-qty-in': (p) => !isGroupMasterRow(p.data) && movementQtyTone(p.value) === 'in',
+        'movement-qty-out': (p) => !isGroupMasterRow(p.data) && movementQtyTone(p.value) === 'out',
+        'movement-qty-zero': (p) => !isGroupMasterRow(p.data) && movementQtyTone(p.value) === 'zero',
+        'movement-qty-neutral': (p) =>
+          isGroupMasterRow(p.data) || movementQtyTone(p.value) === 'neutral',
+        'movement-group-qty-summary': (p) => isGroupMasterRow(p.data),
+      },
+    }),
+    flexTextColumnDef({
+      field: 'movement.user',
+      headerName: 'ОПЕРАТОР',
+      minWidth: 100,
+      maxWidth: 180,
+      cellClass: 'text-xs text-slate-500',
+      valueGetter: (p) => movementField(p.data, 'user'),
+      valueFormatter: (p) => formatOperatorField(String(p.value ?? ''), usersByEmail),
+    }),
+  ], [expandedGroups, usersByEmail]);
 
-  const defaultColDef = useMemo(() => createDefaultColDef(), []);
+  const defaultColDef = useMemo(() => createDefaultColDef({ wrapText: false, autoHeight: false }), []);
 
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const getRowClass = useCallback(
+    (params: { data?: MovementGridRow }) => {
+      if (params.data?.rowType === 'group-master') {
+        const classes = ['movement-group-master-row'];
+        if (params.data.groupKey && expandedGroups.has(params.data.groupKey)) {
+          classes.push('movement-group-master-expanded');
+        }
+        return classes.join(' ');
+      }
+      if (params.data?.rowType === 'group-detail') {
+        return 'movement-group-detail-row movement-group-detail-active';
+      }
+      return undefined;
+    },
+    [expandedGroups],
+  );
+
+  const getRowHeight = useCallback((params: { data?: MovementGridRow }) => {
+    if (params.data?.rowType === 'group-detail') {
+      return undefined;
+    }
+    return COMPACT_GRID_ROW_HEIGHT;
+  }, []);
+
+  const gridContext = useMemo<MovementGroupDetailRendererContext>(
+    () => ({
+      canEditWriteoff: canEditWriteoffGroup(userRole),
+      onEditGroup: (row) => setEditGroup(row),
+      formatOperator,
+    }),
+    [userRole, formatOperator],
+  );
 
   return (
-    <div className="h-full flex flex-col max-w-screen-2xl mx-auto gap-4">
-      <div className="flex items-center justify-between gap-3 bg-white p-3 rounded shadow-sm border border-slate-300">
+    <div className="movements-page p-4 h-full flex flex-col gap-4 min-h-0 overflow-hidden max-w-screen-2xl mx-auto w-full">
+      <div className="shrink-0 flex items-center justify-between gap-3 bg-white p-3 rounded shadow-sm border border-slate-300">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-slate-100 text-slate-700 rounded">
             <ArrowRightLeft className="w-5 h-5" />
@@ -177,8 +439,8 @@ export default function Movements() {
         )}
       </div>
 
-      <div className="flex-1 flex flex-col bg-white border border-slate-300 rounded shadow-sm overflow-hidden min-h-0">
-        <div className="p-2.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-2">
+      <div className="flex-1 flex flex-col bg-white border border-slate-300 rounded shadow-sm overflow-hidden min-h-0 min-w-0">
+        <div className="shrink-0 p-2.5 border-b border-slate-200 bg-slate-50 flex flex-wrap items-center gap-2">
           <div className="relative w-72 flex">
             <div className="pl-3 py-1.5 bg-slate-200 border border-slate-300 border-r-0 rounded-l flex items-center text-slate-500">
               <Search className="h-3.5 w-3.5" />
@@ -265,37 +527,48 @@ export default function Movements() {
           </div>
         </FilterDrawer>
 
-        <div className="flex-1 relative">
+        <div className="flex-1 w-full min-h-0 relative">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 text-xs font-semibold text-slate-500">
               Загрузка...
             </div>
           )}
-          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
+          <div
+            className={`${compactGridClassName} movements-grid absolute inset-0 ${loading ? 'opacity-50 pointer-events-none' : ''}`}
+            style={compactGridThemeStyle}
+          >
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
-              rowData={rowData}
+              rowData={gridRows}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              getRowHeight={getRowHeight}
               headerHeight={COMPACT_GRID_HEADER_HEIGHT}
+              overlayNoRowsTemplate="<span></span>"
+              getRowId={(p) => p.data.rowId}
+              getRowClass={getRowClass}
+              onRowClicked={onRowClicked}
+              isFullWidthRow={(p) => p.rowNode.data?.rowType === 'group-detail'}
+              fullWidthCellRenderer={MovementGroupDetailRenderer}
+              embedFullWidthRows={false}
+              context={gridContext}
             />
           </div>
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
-          <span>Показано {rowData.length} из {total}</span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="font-mono font-semibold">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
+        <WriteoffGroupEditPanel
+          open={!!editGroup}
+          items={editGroup?.groupItems ?? []}
+          operationGroupId={editGroup?.groupItems?.[0]?.operationGroupId}
+          onClose={() => setEditGroup(null)}
+          onSaved={() => void loadMovements()}
+        />
+
+        <div className="shrink-0 px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+          <span>Показано {items.length} из {total}</span>
         </div>
       </div>
     </div>

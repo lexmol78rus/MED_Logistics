@@ -47,6 +47,20 @@ export function computeInventoryBalance(
   };
 }
 
+export function isLotExpired(expiryDate: Date | null, now: Date = new Date()): boolean {
+  return expiryDate != null && expiryDate.getTime() < now.getTime();
+}
+
+/** Остаток для списания: просрочка входит в qty, но не блокирует операцию. */
+export function computeWriteoffAvailableQuantity(
+  totalQuantity: number,
+  lot: BalanceLotContext,
+  now: Date = new Date(),
+): number {
+  const bal = computeInventoryBalance(totalQuantity, lot, now);
+  return bal.availableQuantity + bal.expiredQuantity;
+}
+
 export function mergeBalances(
   balances: InventoryBalanceBreakdown[],
 ): InventoryBalanceBreakdown {

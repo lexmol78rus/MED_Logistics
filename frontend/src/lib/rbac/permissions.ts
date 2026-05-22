@@ -67,6 +67,10 @@ export function canWriteoff(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
 }
 
+export function canEditWriteoffGroup(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER';
+}
+
 export function canManageLotStatus(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
 }

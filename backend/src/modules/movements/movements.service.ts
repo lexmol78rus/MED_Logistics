@@ -6,6 +6,13 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { MovementsQueryDto } from './dto/movements-query.dto';
 import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
 
+export type MovementCorrectionMeta = {
+  correctedBy: string;
+  correctedAt: string;
+  reason: string;
+  originalReference: string | null;
+};
+
 export type MovementListItem = {
   id: string;
   date: string;
@@ -14,8 +21,17 @@ export type MovementListItem = {
   productName: string;
   ref: string;
   lot: string | null;
+  expiryDate: string | null;
   qty: string;
   user: string;
+  operationGroupId: string | null;
+  comment: string | null;
+  isCorrection?: boolean;
+  hasCorrections?: boolean;
+  correctionCount?: number;
+  lastCorrection?: MovementCorrectionMeta | null;
+  correctionSessionId?: string | null;
+  effectiveWriteoffQty?: number | null;
 };
 
 function formatMovementDate(date: Date): string {
@@ -81,36 +97,101 @@ export class MovementsService {
         orderBy: { createdAt: 'desc' },
         include: {
           product: { select: { name: true, sku: true } },
-          lot: { select: { lotNumber: true } },
+          lot: { select: { lotNumber: true, expiryDate: true } },
           destination: { select: { name: true } },
         },
       }),
     ]);
 
+    const movementIds = movements.map((m) => m.id);
+    type CorrectionRow = {
+      correctedMovementId: string | null;
+      actorEmail: string | null;
+      createdAt: Date;
+      editReason: string | null;
+      reference: string;
+      type: MovementType;
+      quantity: Prisma.Decimal;
+    };
+
+    const correctionsByRoot = new Map<string, CorrectionRow[]>();
+
+    if (movementIds.length > 0) {
+      const correctionsForRoots = await this.prisma.stockMovement.findMany({
+        where: { correctedMovementId: { in: movementIds } },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          correctedMovementId: true,
+          actorEmail: true,
+          createdAt: true,
+          editReason: true,
+          reference: true,
+          type: true,
+          quantity: true,
+        },
+      });
+
+      for (const c of correctionsForRoots) {
+        const rootId = c.correctedMovementId!;
+        if (!correctionsByRoot.has(rootId)) correctionsByRoot.set(rootId, []);
+        correctionsByRoot.get(rootId)!.push(c);
+      }
+    }
+
     const items = movements.map((m) => {
       const qtyNum = decimalToNumber(m.quantity);
+      const isCorrection = !!m.correctedMovementId;
       const sign =
-        m.type === MovementType.RECEIPT || m.type === MovementType.UNBLOCK
+        isCorrection && m.type === MovementType.ADJUSTMENT
           ? '+'
-          : m.type === MovementType.ISSUE
-            ? '-'
-            : qtyNum >= 0
-              ? '+'
-              : '';
+          : m.type === MovementType.RECEIPT || m.type === MovementType.UNBLOCK
+            ? '+'
+            : m.type === MovementType.ISSUE
+              ? '-'
+              : qtyNum >= 0
+                ? '+'
+                : '';
       const absQty = Math.abs(qtyNum);
 
       const destinationLabel =
-        m.type === MovementType.ISSUE
+        m.type === MovementType.ISSUE || (isCorrection && m.writeOffDestinationId)
           ? resolveWriteoffDestinationLabel(
               m.destination,
               m.writeOffDestination,
               m.writeOffComment,
             )
           : null;
-      const typeLabel =
-        m.type === MovementType.ISSUE && destinationLabel
-          ? `Списано → ${destinationLabel}`
-          : TYPE_LABELS[m.type];
+
+      let typeLabel = TYPE_LABELS[m.type];
+      if (isCorrection) {
+        typeLabel =
+          m.type === MovementType.ADJUSTMENT
+            ? 'Корректировка списания (возврат)'
+            : 'Корректировка списания (доп.)';
+      } else if (m.type === MovementType.ISSUE && destinationLabel) {
+        typeLabel = `Списано → ${destinationLabel}`;
+      }
+
+      const rootCorrections = correctionsByRoot.get(m.id) ?? [];
+      let effectiveWriteoffQty: number | null = null;
+      if (m.type === MovementType.ISSUE && !m.correctedMovementId) {
+        let issued = qtyNum;
+        for (const c of rootCorrections) {
+          const cq = decimalToNumber(c.quantity);
+          if (c.type === MovementType.ISSUE) issued += cq;
+          else if (c.type === MovementType.ADJUSTMENT) issued -= cq;
+        }
+        effectiveWriteoffQty = Math.max(0, issued);
+      }
+      const lastCorrectionRow = rootCorrections[0];
+      const lastCorrection: MovementCorrectionMeta | null = lastCorrectionRow
+        ? {
+            correctedBy: lastCorrectionRow.actorEmail ?? 'Система',
+            correctedAt: formatMovementDate(lastCorrectionRow.createdAt),
+            reason: lastCorrectionRow.editReason?.trim() || '—',
+            originalReference: m.reference,
+          }
+        : null;
 
       return {
         id: m.reference,
@@ -120,8 +201,18 @@ export class MovementsService {
         productName: m.product.name,
         ref: m.product.sku,
         lot: m.lot?.lotNumber ?? null,
+        expiryDate: m.lot?.expiryDate?.toISOString().slice(0, 10) ?? null,
         qty: qtyNum === 0 ? '0' : `${sign}${absQty.toLocaleString('ru-RU')}`,
         user: m.actorEmail ?? 'Система',
+        operationGroupId: m.operationGroupId,
+        comment: m.writeOffComment,
+        isCorrection,
+        hasCorrections: rootCorrections.length > 0,
+        correctionCount: rootCorrections.length,
+        lastCorrection,
+        correctionSessionId: m.correctionSessionId,
+        effectiveWriteoffQty,
+        editReason: m.editReason?.trim() || null,
       };
     });
 

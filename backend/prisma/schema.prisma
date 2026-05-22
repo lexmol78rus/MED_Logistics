@@ -1,5 +1,6 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -29,6 +30,21 @@ enum MovementType {
   UNBLOCK
   RECALL
   BLOCK
+}
+
+enum ExpectedReceiptStatus {
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
+enum ExpectedReceiptEventType {
+  CREATED
+  RECEIVED
+  UPDATED
+  CANCELLED
+  CLOSED
 }
 
 model User {
@@ -88,10 +104,11 @@ model Product {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
 
-  lots          Lot[]
-  barcodes      BarcodeRecord[]
-  inventoryRows InventoryItem[]
-  movements     StockMovement[]
+  lots             Lot[]
+  barcodes         BarcodeRecord[]
+  inventoryRows    InventoryItem[]
+  movements        StockMovement[]
+  expectedReceipts ExpectedReceipt[]
 
   @@map("products")
 }
@@ -174,15 +191,24 @@ model StockMovement {
   writeOffDestinationId String?      @map("write_off_destination_id")
   writeOffDestination   String?      @map("write_off_destination")
   writeOffComment       String?      @map("write_off_comment")
+  operationGroupId      String?      @map("operation_group_id")
+  correctedMovementId   String?      @map("corrected_movement_id")
+  correctionSessionId   String?      @map("correction_session_id")
+  editReason            String?      @map("edit_reason")
   createdAt             DateTime     @default(now()) @map("created_at")
 
-  product     Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
-  lot         Lot?                 @relation(fields: [lotId], references: [id], onDelete: SetNull)
-  destination WriteOffDestination? @relation(fields: [writeOffDestinationId], references: [id], onDelete: SetNull)
+  product           Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lot               Lot?                 @relation(fields: [lotId], references: [id], onDelete: SetNull)
+  destination       WriteOffDestination? @relation(fields: [writeOffDestinationId], references: [id], onDelete: SetNull)
+  correctedMovement StockMovement?       @relation("MovementCorrections", fields: [correctedMovementId], references: [id], onDelete: SetNull)
+  corrections       StockMovement[]      @relation("MovementCorrections")
 
   @@index([productId, createdAt])
   @@index([createdAt])
   @@index([writeOffDestinationId])
+  @@index([operationGroupId])
+  @@index([correctedMovementId])
+  @@index([correctionSessionId])
   @@map("stock_movements")
 }
 
@@ -234,4 +260,38 @@ model SystemSetting {
   updatedBy String?  @map("updated_by")
 
   @@map("system_settings")
+}
+
+model ExpectedReceipt {
+  id          String                @id @default(cuid())
+  productId   String                @map("product_id")
+  orderedQty  Decimal               @map("ordered_qty") @db.Decimal(18, 4)
+  receivedQty Decimal               @default(0) @map("received_qty") @db.Decimal(18, 4)
+  status      ExpectedReceiptStatus @default(ORDERED)
+  comment     String?
+  createdBy   String?               @map("created_by")
+  createdAt   DateTime              @default(now()) @map("created_at")
+  updatedAt   DateTime              @updatedAt @map("updated_at")
+
+  product Product               @relation(fields: [productId], references: [id], onDelete: Cascade)
+  events  ExpectedReceiptEvent[]
+
+  @@index([productId, status])
+  @@index([status])
+  @@map("expected_receipts")
+}
+
+model ExpectedReceiptEvent {
+  id                String                   @id @default(cuid())
+  expectedReceiptId String                   @map("expected_receipt_id")
+  type              ExpectedReceiptEventType
+  quantity          Decimal?                 @db.Decimal(18, 4)
+  message           String?
+  actorEmail        String?                  @map("actor_email")
+  createdAt         DateTime                 @default(now()) @map("created_at")
+
+  expectedReceipt ExpectedReceipt @relation(fields: [expectedReceiptId], references: [id], onDelete: Cascade)
+
+  @@index([expectedReceiptId, createdAt])
+  @@map("expected_receipt_events")
 }

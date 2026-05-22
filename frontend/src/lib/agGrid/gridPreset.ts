@@ -1,8 +1,10 @@
 import type {
+  CellClassParams,
   ColDef,
   ColDefField,
   GridOptions,
   ISimpleFilterModelType,
+  ITooltipParams,
   ValueFormatterParams,
 } from 'ag-grid-community';
 import type { CSSProperties } from 'react';
@@ -36,6 +38,25 @@ export const GRID_COUNT_COLUMN_WIDTH = 100;
 
 export const compactGridClassName = 'ag-theme-quartz compact-data-grid';
 
+/** Scrollable list pages (products, lots, users, …) — full-width flex columns */
+export const listGridClassName = `${compactGridClassName} list-grid`;
+
+/** Flex weights — conservative ratios to avoid column overlap */
+export const GRID_FLEX_NARROW = 0.8;
+export const GRID_FLEX_DEFAULT = 1.2;
+export const GRID_FLEX_WIDE = 2;
+export const GRID_FLEX_PRIMARY = 3.5;
+
+/** Default min widths (px) — floor before horizontal scroll */
+export const GRID_MIN_BADGE = 120;
+export const GRID_MIN_REF = 170;
+export const GRID_MIN_PRIMARY = 260;
+export const GRID_MIN_TEXT = 120;
+export const GRID_MIN_NUMERIC = 96;
+
+/** CSS class for badge / status renderers (no ellipsis, clipped to column) */
+export const GRID_CELL_CLASS_BADGE = 'ag-cell-badge';
+
 export const compactGridThemeStyle: CSSProperties = {
   '--ag-header-background-color': '#f8fafc',
   '--ag-header-foreground-color': '#64748b',
@@ -56,6 +77,9 @@ export const sharedGridColumnDefaults: ColDef = {
   suppressMovable: true,
 };
 
+/** CSS-класс ячейки с ellipsis; tooltip показывается только при обрезке (tooltipShowMode). */
+export const TRUNCATE_CELL_CLASS = 'ag-cell-truncate';
+
 /** Общие опции сетки: русская локаль, popups в body, без закрытия dropdown при scroll. */
 export function getSharedGridOptions(): GridOptions {
   return {
@@ -64,6 +88,22 @@ export function getSharedGridOptions(): GridOptions {
     suppressMenuHide: true,
     /** Иначе dropdown условия фильтра закрывается при scroll в layout (overflow-auto). */
     suppressScrollWhenPopupsAreOpen: true,
+    /** Кастомный светлый .ag-tooltip; false — не ставить title на ячейки (иначе двойной tooltip). */
+    enableBrowserTooltips: false,
+    /** Полный текст при hover только если ячейка обрезана (как Excel / ERP). */
+    tooltipShowMode: 'whenTruncated',
+    tooltipShowDelay: 500,
+    tooltipSwitchShowDelay: 300,
+    tooltipHideDelay: 800,
+    /** Можно навести на tooltip и выделить текст. */
+    tooltipInteraction: true,
+    /** Выделение и Ctrl+C в ячейках (REF, LOT, названия и т.д.). */
+    enableCellTextSelection: true,
+    ensureDomOrder: true,
+    /** Единый UX: только virtual scroll внутри grid, без pager footer. */
+    pagination: false,
+    suppressPaginationPanel: true,
+    domLayout: 'normal',
   };
 }
 
@@ -83,19 +123,51 @@ export function formatRuInteger(value: unknown): string {
 
 const ruIntegerFormatter = (params: ValueFormatterParams) => formatRuInteger(params.value);
 
-/** Centered numeric column with tabular figures and fixed width */
+/** Compact column (dates, codes, short labels) */
+export function compactColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  const { width: _width, flex = GRID_FLEX_NARROW, minWidth, maxWidth, ...rest } = overrides;
+  return {
+    flex,
+    minWidth: minWidth ?? GRID_MIN_TEXT,
+    ...(maxWidth != null ? { maxWidth } : {}),
+    ...rest,
+  };
+}
+
+/** Badge / status column — wider minWidth, content clipped inside cell */
+export function badgeColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  const { width: _width, flex = GRID_FLEX_NARROW, minWidth, maxWidth, cellClass, ...rest } = overrides;
+  return compactColumnDef({
+    flex,
+    minWidth: minWidth ?? GRID_MIN_BADGE,
+    maxWidth,
+    cellClass: mergeClasses(GRID_CELL_CLASS_BADGE, cellClass),
+    ...rest,
+  });
+}
+
+/** Centered numeric column — small flex, tabular figures */
 export function numericColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
-  const width = overrides.width ?? GRID_NUMERIC_COLUMN_WIDTH;
+  const {
+    width: _width,
+    flex = GRID_FLEX_NARROW,
+    minWidth,
+    maxWidth,
+    headerClass,
+    cellClass,
+    valueFormatter,
+    ...rest
+  } = overrides;
   return {
     type: 'numericColumn',
     suppressSizeToFit: true,
-    headerClass: mergeClasses('ag-header-numeric', overrides.headerClass),
-    cellClass: mergeClasses('ag-cell-numeric', overrides.cellClass),
-    valueFormatter: overrides.valueFormatter ?? ruIntegerFormatter,
-    ...overrides,
-    width,
-    minWidth: overrides.minWidth ?? width,
-    maxWidth: overrides.maxWidth ?? width,
+    flex,
+    minWidth: minWidth ?? GRID_MIN_NUMERIC,
+    maxWidth: maxWidth ?? 120,
+    headerClass: mergeClasses('ag-header-numeric', headerClass),
+    cellClass: mergeClasses('ag-cell-numeric', cellClass),
+    valueFormatter: valueFormatter ?? ruIntegerFormatter,
+    ...rest,
   };
 }
 
@@ -104,7 +176,6 @@ export function stockQtyColumnDef<T>(field: ColDefField<T>, overrides?: Partial<
   return numericColumnDef<T>({
     field,
     headerName: 'ОСТАТОК',
-    width: GRID_NUMERIC_COLUMN_WIDTH,
     cellClass: 'ag-cell-stock-qty',
     ...overrides,
   });
@@ -115,10 +186,30 @@ export function lotsCountColumnDef<T>(field: ColDefField<T>, overrides?: Partial
   return numericColumnDef<T>({
     field,
     headerName: 'ПАРТИЙ',
-    width: GRID_COUNT_COLUMN_WIDTH,
     cellClass: 'ag-cell-lots-count',
     ...overrides,
   });
+}
+
+/** Medium text column (REF, изготовитель, …) */
+export function flexTextColumnDef<T>(overrides: ColDef<T>, flex = GRID_FLEX_DEFAULT): ColDef<T> {
+  const { width: _width, minWidth, ...rest } = overrides;
+  return truncatedTextColumnDef({
+    flex,
+    minWidth: minWidth ?? GRID_MIN_TEXT,
+    ...rest,
+  });
+}
+
+/** REF column preset */
+export function refColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  return flexTextColumnDef(overrides, GRID_FLEX_DEFAULT);
+}
+
+/** Primary label column (НОМЕНКЛАТУРА, описание) — largest share */
+export function primaryTextColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  const { minWidth, ...rest } = overrides;
+  return flexTextColumnDef({ minWidth: minWidth ?? GRID_MIN_PRIMARY, ...rest }, GRID_FLEX_PRIMARY);
 }
 
 /** Horizontally centered column (FEFO rank, badges, etc.) */
@@ -135,4 +226,58 @@ function mergeClasses(base: string, extra?: string | string[]): string {
   if (typeof extra === 'string') parts.push(extra);
   else if (Array.isArray(extra)) parts.push(...extra);
   return parts.filter(Boolean).join(' ');
+}
+
+function mergeTruncateCellClass<T>(
+  cellClass?: ColDef<T>['cellClass'],
+): ColDef<T>['cellClass'] {
+  if (!cellClass) return TRUNCATE_CELL_CLASS;
+  if (typeof cellClass === 'function') {
+    return (params: CellClassParams<T>) => {
+      const resolved = cellClass(params);
+      return mergeTruncateCellClass(
+        resolved as string | string[] | undefined,
+      ) as string | string[];
+    };
+  }
+  if (typeof cellClass === 'string') return mergeClasses(TRUNCATE_CELL_CLASS, cellClass);
+  return [TRUNCATE_CELL_CLASS, ...cellClass];
+}
+
+function resolveTruncatedTooltip<T>(overrides: ColDef<T>): Pick<ColDef<T>, 'tooltipField' | 'tooltipValueGetter'> {
+  if (overrides.tooltipValueGetter != null || overrides.tooltipField != null) {
+    return {};
+  }
+  if (overrides.valueGetter != null) {
+    const getter = overrides.valueGetter;
+    return {
+      tooltipValueGetter: (params: ITooltipParams<T>) => {
+        const raw =
+          typeof getter === 'function'
+            ? getter(params as Parameters<typeof getter>[0])
+            : params.data?.[getter as keyof T];
+        if (raw == null || raw === '') return null;
+        const formatted = overrides.valueFormatter
+          ? overrides.valueFormatter(params as ValueFormatterParams<T>)
+          : String(raw);
+        return formatted || null;
+      },
+    };
+  }
+  if (overrides.field != null) {
+    return { tooltipField: String(overrides.field) };
+  }
+  return {};
+}
+
+/**
+ * Текстовая колонка с ellipsis и AG Grid tooltip (полное значение при обрезке).
+ */
+export function truncatedTextColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  const { cellClass, ...rest } = overrides;
+  return {
+    ...rest,
+    cellClass: mergeTruncateCellClass(cellClass),
+    ...resolveTruncatedTooltip(overrides),
+  };
 }

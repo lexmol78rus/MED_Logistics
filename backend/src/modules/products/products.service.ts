@@ -4,16 +4,20 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { MovementType, Prisma } from '@prisma/client';
+import { LotStatus, MovementType, Prisma } from '@prisma/client';
 import { ProductsQueryDto } from './dto/products-query.dto';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import {
   computeProductStatus,
   formatNearestExpiry,
+  resolveNearestAvailableExpiry,
+  resolvePrimaryLotNumber,
+  type ProductLotContext,
 } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
+import { ExpectedReceiptsService } from '../expected-receipts/expected-receipts.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
@@ -23,6 +27,7 @@ export type ProductListItem = {
   status: string;
   name: string;
   ref: string;
+  lot: string | null;
   manufacturer: string | null;
   qty: number;
   availableQty: number;
@@ -50,6 +55,7 @@ export class ProductsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly balance: InventoryBalanceService,
+    private readonly expectedReceipts: ExpectedReceiptsService,
   ) {}
 
   async list(query: ProductsQueryDto): Promise<PaginatedResponse<ProductListItem>> {
@@ -74,6 +80,7 @@ export class ProductsService {
               { name: { contains: search, mode: 'insensitive' } },
               { manufacturer: { contains: search, mode: 'insensitive' } },
               { barcodes: { some: { barcode: { contains: search, mode: 'insensitive' } } } },
+              { lots: { some: { lotNumber: { contains: search, mode: 'insensitive' } } } },
             ],
           }
         : {}),
@@ -84,7 +91,18 @@ export class ProductsService {
       orderBy: { name: 'asc' },
       include: {
         barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-        lots: { select: { id: true, expiryDate: true } },
+        lots: {
+          select: {
+            id: true,
+            lotNumber: true,
+            expiryDate: true,
+            status: true,
+            inventoryRows: {
+              where: { quantity: { gt: 0 } },
+              select: { quantity: true, reservedQuantity: true },
+            },
+          },
+        },
         inventoryRows: { select: { quantity: true } },
       },
     });
@@ -109,7 +127,18 @@ export class ProductsService {
       where: { id },
       include: {
         barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-        lots: { select: { id: true, expiryDate: true } },
+        lots: {
+          select: {
+            id: true,
+            lotNumber: true,
+            expiryDate: true,
+            status: true,
+            inventoryRows: {
+              where: { quantity: { gt: 0 } },
+              select: { quantity: true, reservedQuantity: true },
+            },
+          },
+        },
         inventoryRows: { select: { quantity: true } },
       },
     });
@@ -142,7 +171,18 @@ export class ProductsService {
       },
       include: {
         barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-        lots: { select: { id: true, expiryDate: true } },
+        lots: {
+          select: {
+            id: true,
+            lotNumber: true,
+            expiryDate: true,
+            status: true,
+            inventoryRows: {
+              where: { quantity: { gt: 0 } },
+              select: { quantity: true, reservedQuantity: true },
+            },
+          },
+        },
         inventoryRows: { select: { quantity: true } },
       },
     });
@@ -170,7 +210,18 @@ export class ProductsService {
         product: {
           include: {
             barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-            lots: { select: { id: true, expiryDate: true } },
+            lots: {
+              select: {
+                id: true,
+                lotNumber: true,
+                expiryDate: true,
+                status: true,
+                inventoryRows: {
+                  where: { quantity: { gt: 0 } },
+                  select: { quantity: true, reservedQuantity: true },
+                },
+              },
+            },
             inventoryRows: { select: { quantity: true } },
           },
         },
@@ -194,7 +245,18 @@ export class ProductsService {
       },
       include: {
         barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-        lots: { select: { id: true, expiryDate: true } },
+        lots: {
+          select: {
+            id: true,
+            lotNumber: true,
+            expiryDate: true,
+            status: true,
+            inventoryRows: {
+              where: { quantity: { gt: 0 } },
+              select: { quantity: true, reservedQuantity: true },
+            },
+          },
+        },
         inventoryRows: { select: { quantity: true } },
       },
     });
@@ -300,7 +362,12 @@ export class ProductsService {
       minStock: Prisma.Decimal | null;
       reorderPoint: Prisma.Decimal | null;
       barcodes: { barcode: string }[];
-      lots: { expiryDate: Date | null }[];
+      lots: {
+        lotNumber: string;
+        expiryDate: Date | null;
+        status: LotStatus;
+        inventoryRows: { quantity: Prisma.Decimal; reservedQuantity: Prisma.Decimal | null }[];
+      }[];
       inventoryRows: { quantity: Prisma.Decimal }[];
     },
   ): Promise<ProductListItem> {
@@ -309,11 +376,21 @@ export class ProductsService {
       0,
     );
     const bal = await this.balance.getProductBalance(product.id);
-    const expiries = product.lots
-      .map((l) => l.expiryDate)
-      .filter((d): d is Date => d != null)
-      .sort((a, b) => a.getTime() - b.getTime());
-    const nearestExpiry = expiries[0] ?? null;
+    const lotContexts: ProductLotContext[] = product.lots.map((l) => ({
+      lotNumber: l.lotNumber,
+      expiryDate: l.expiryDate,
+      status: l.status,
+      totalQty: l.inventoryRows.reduce(
+        (sum, row) => sum + decimalToNumber(row.quantity),
+        0,
+      ),
+      reservedQty: l.inventoryRows.reduce(
+        (sum, row) => sum + decimalToNumber(row.reservedQuantity ?? 0),
+        0,
+      ),
+    }));
+    const nearestExpiry = resolveNearestAvailableExpiry(lotContexts);
+    const primaryLot = resolvePrimaryLotNumber(lotContexts);
     const minStock = product.minStock != null ? decimalToNumber(product.minStock) : null;
     const reorderPoint =
       product.reorderPoint != null ? decimalToNumber(product.reorderPoint) : null;
@@ -328,6 +405,7 @@ export class ProductsService {
       status: computeProductStatus(bal.availableQuantity, nearestExpiry),
       name: product.name,
       ref: product.sku,
+      lot: primaryLot,
       manufacturer: product.manufacturer,
       qty,
       availableQty: bal.availableQuantity,

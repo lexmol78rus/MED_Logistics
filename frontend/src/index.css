@@ -5,16 +5,32 @@
 @import "ag-grid-community/styles/ag-grid.css";
 @import "ag-grid-community/styles/ag-theme-quartz.css";
 
-/* Expiry control: prevent status badge clipping inside AG Grid cells */
-.expiry-control-grid .ag-cell {
+/* Expiry / Movements: badge cells must not clip */
+.expiry-control-grid .ag-cell,
+.movements-grid .ag-cell,
+.audit-grid .ag-cell {
   overflow: visible;
   line-height: normal;
 }
 
-.expiry-control-grid .ag-center-cols-viewport,
-.expiry-control-grid .ag-pinned-left-cols-viewport,
-.expiry-control-grid .ag-pinned-right-cols-viewport {
-  overflow-x: auto;
+.movements-grid .movement-type-cell {
+  overflow: visible !important;
+}
+
+.movements-grid .movement-type-cell .ag-cell-wrapper,
+.movements-grid .movement-type-cell .ag-cell-value {
+  overflow: visible;
+  width: 100%;
+}
+
+.movements-grid .movement-type-badge {
+  max-width: none;
+}
+
+.movements-grid .movement-destination-cell,
+.audit-grid .audit-type-cell,
+.audit-grid .audit-actor-cell {
+  min-height: 100%;
 }
 
 /* Shared compact data grid (products, lots, movements, expiry-control) */
@@ -22,11 +38,58 @@
   display: flex;
   align-items: center;
   line-height: 1.25;
+  box-sizing: border-box;
+}
+
+/* List grids: clip to column bounds — prevents badge/text overlap between columns */
+.list-grid.compact-data-grid {
+  --ag-cell-horizontal-padding: 10px;
+}
+
+.list-grid.compact-data-grid .ag-cell {
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-cell-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-cell-renderer {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-cell-badge .ag-cell-wrapper,
+.list-grid.compact-data-grid .ag-cell-badge .ag-cell-renderer {
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-cell-status-indicator {
+  overflow: visible;
+}
+
+.list-grid.compact-data-grid .ag-cell-status-indicator .ag-cell-wrapper,
+.list-grid.compact-data-grid .ag-cell-status-indicator .ag-cell-renderer {
+  overflow: visible;
+}
+
+.list-grid.compact-data-grid .ag-cell-status-indicator .ag-cell-wrapper,
+.list-grid.compact-data-grid .ag-cell-status-indicator .ag-cell-value {
+  justify-content: center;
+}
+
+.list-grid.compact-data-grid .ag-cell-nearest-expiry .ag-cell-value {
+  padding-inline: 2px;
 }
 
 .compact-data-grid .ag-cell-wrapper,
 .compact-data-grid .ag-cell-value {
   width: 100%;
+  min-width: 0;
 }
 
 .compact-data-grid .ag-cell-numeric {
@@ -52,6 +115,103 @@
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 0.75rem;
   font-weight: 700;
+}
+
+.compact-data-grid .ag-cell-movement-qty.movement-qty-in,
+.compact-data-grid .ag-cell-movement-qty.movement-qty-in .ag-cell-value {
+  color: #059669;
+}
+
+.compact-data-grid .ag-cell-movement-qty.movement-qty-out,
+.compact-data-grid .ag-cell-movement-qty.movement-qty-out .ag-cell-value {
+  color: #dc2626;
+}
+
+.compact-data-grid .ag-cell-movement-qty.movement-qty-zero,
+.compact-data-grid .ag-cell-movement-qty.movement-qty-zero .ag-cell-value,
+.compact-data-grid .ag-cell-movement-qty.movement-qty-neutral,
+.compact-data-grid .ag-cell-movement-qty.movement-qty-neutral .ag-cell-value {
+  color: #475569;
+}
+
+.compact-data-grid .ag-cell-movement-qty.movement-group-qty-summary,
+.compact-data-grid .ag-cell-movement-qty.movement-group-qty-summary .ag-cell-value {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.movement-expiry-cell .ag-cell-wrapper,
+.movement-expiry-cell .ag-cell-renderer {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.movement-expiry-label {
+  box-sizing: border-box;
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 1.5rem;
+  align-items: center;
+  justify-content: center;
+  padding: 0.125rem 0.5rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 0.25rem;
+  border: 1px solid transparent;
+}
+
+.movement-expiry-label--inline {
+  min-height: 1.25rem;
+  padding: 0.0625rem 0.375rem;
+  font-size: 0.6875rem;
+}
+
+.movement-expiry-empty,
+.movement-expiry-empty-tone .ag-cell-value {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.movement-expiry-ok {
+  color: #047857;
+  background-color: #ecfdf5;
+  border-color: #a7f3d0;
+}
+
+.movement-expiry-warning {
+  color: #b45309;
+  background-color: #fffbeb;
+  border-color: #fde68a;
+}
+
+.movement-expiry-critical {
+  color: #dc2626;
+  font-weight: 600;
+  background-color: #fef2f2;
+  border-color: #fecaca;
+}
+
+.movement-group-detail .movement-detail-qty.movement-qty-in {
+  color: #059669;
+  font-weight: 700;
+}
+
+.movement-group-detail .movement-detail-qty.movement-qty-out {
+  color: #dc2626;
+  font-weight: 700;
+}
+
+.movement-group-detail .movement-detail-qty.movement-qty-zero,
+.movement-group-detail .movement-detail-qty.movement-qty-neutral {
+  color: #475569;
+  font-weight: 600;
 }
 
 .compact-data-grid .ag-header-cell.ag-header-numeric .ag-header-cell-label,
@@ -100,10 +260,263 @@
   pointer-events: auto;
 }
 
-.compact-data-grid .ag-root-wrapper,
-.compact-data-grid .ag-body-viewport,
-.compact-data-grid .ag-center-cols-viewport {
+.compact-data-grid:not(.movements-grid):not(.expiry-control-grid):not(.list-grid) .ag-root-wrapper,
+.compact-data-grid:not(.movements-grid):not(.expiry-control-grid):not(.list-grid) .ag-body-viewport,
+.compact-data-grid:not(.movements-grid):not(.expiry-control-grid):not(.list-grid) .ag-center-cols-viewport {
   overflow: visible;
+}
+
+/* Scrollable list grids: fixed height parent + wheel scroll inside body */
+.list-grid.compact-data-grid,
+.movements-grid.compact-data-grid,
+.expiry-control-grid.compact-data-grid,
+.audit-grid.compact-data-grid {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-root-wrapper,
+.movements-grid.compact-data-grid .ag-root-wrapper,
+.expiry-control-grid.compact-data-grid .ag-root-wrapper,
+.audit-grid.compact-data-grid .ag-root-wrapper {
+  height: 100%;
+  overflow: hidden;
+}
+
+.list-grid.compact-data-grid .ag-body-viewport,
+.movements-grid.compact-data-grid .ag-body-viewport,
+.expiry-control-grid.compact-data-grid .ag-body-viewport,
+.audit-grid.compact-data-grid .ag-body-viewport {
+  overflow-y: auto !important;
+  overflow-x: hidden;
+}
+
+.list-grid.compact-data-grid .ag-center-cols-viewport,
+.list-grid.compact-data-grid .ag-pinned-left-cols-viewport,
+.list-grid.compact-data-grid .ag-pinned-right-cols-viewport,
+.movements-grid.compact-data-grid .ag-center-cols-viewport,
+.movements-grid.compact-data-grid .ag-pinned-left-cols-viewport,
+.movements-grid.compact-data-grid .ag-pinned-right-cols-viewport,
+.expiry-control-grid.compact-data-grid .ag-center-cols-viewport,
+.expiry-control-grid.compact-data-grid .ag-pinned-left-cols-viewport,
+.expiry-control-grid.compact-data-grid .ag-pinned-right-cols-viewport,
+.audit-grid.compact-data-grid .ag-center-cols-viewport,
+.audit-grid.compact-data-grid .ag-pinned-left-cols-viewport,
+.audit-grid.compact-data-grid .ag-pinned-right-cols-viewport {
+  overflow-x: auto;
+}
+
+.audit-grid .ag-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+}
+
+.audit-grid .audit-row-zebra {
+  background-color: #f8fafc;
+}
+
+.audit-grid .audit-row-selected {
+  background-color: #e0f2fe !important;
+}
+
+.audit-grid .audit-row-danger {
+  background-color: #fef2f2;
+}
+
+/* Movements: grouped operation rows */
+.movements-grid .movement-group-master-row {
+  cursor: pointer;
+  background-color: #fafbfc;
+}
+
+.movements-grid .movement-group-master-row:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.movements-grid .movement-group-master-expanded {
+  background-color: #f8fafc !important;
+}
+
+/* Expanded group: visually isolated “card zone”, not a table row continuation */
+.movements-grid .ag-row.movement-group-detail-row {
+  background-color: transparent !important;
+  border-top: none !important;
+  border-bottom: none !important;
+  z-index: 2;
+}
+
+.movements-grid .ag-row.movement-group-detail-active {
+  z-index: 3;
+}
+
+.movements-grid .movement-group-detail-row,
+.movements-grid .movement-group-detail-row .ag-row,
+.movements-grid .movement-group-detail-row .ag-full-width-row,
+.movements-grid .movement-group-detail-row .ag-full-width-container,
+.movements-grid .movement-group-detail-row .ag-full-width-row-center {
+  overflow: visible !important;
+}
+
+.movements-grid .movement-group-detail-row .ag-full-width-row,
+.movements-grid .movement-group-detail-row .ag-full-width-container,
+.movements-grid .movement-group-detail-row .ag-full-width-row-center {
+  position: relative !important;
+  padding: 0;
+  border: none;
+  height: auto !important;
+  min-height: unset !important;
+  background: transparent !important;
+}
+
+.movements-grid .movement-group-detail-row .ag-cell-wrapper,
+.movements-grid .movement-group-detail-row .ag-cell-value {
+  width: 100%;
+  height: auto !important;
+  min-height: unset !important;
+  padding: 0;
+  overflow: visible;
+  background: transparent !important;
+}
+
+/* Host: horizontal inset; vertical rhythm lives in expanded shell (measured) */
+.movements-grid .movement-group-detail-host {
+  box-sizing: border-box;
+  height: auto;
+  min-height: 0;
+  padding: 0 12px;
+}
+
+/* Outer frame — one clear “expanded block” without dimming the whole grid */
+.movements-grid .movement-group-expanded-shell {
+  margin: 12px 0 24px;
+  padding: 12px;
+  border-radius: 16px;
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  transition:
+    box-shadow 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+.movements-grid .movement-group-detail-active .movement-group-expanded-shell {
+  border-color: #cbd5e1;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  transform: translateY(0);
+}
+
+.movements-grid .movement-group-detail {
+  border: 1px solid #dbe3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+  transition:
+    box-shadow 120ms ease,
+    border-color 120ms ease,
+    transform 120ms ease;
+}
+
+/* Spacer inside measured panel — reserves row height so next table row never touches the card */
+.movements-grid .movement-group-detail::after {
+  content: '';
+  display: block;
+  height: 72px;
+  pointer-events: none;
+}
+
+.movements-grid .movement-group-detail-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.movements-grid .movement-group-detail-banner-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #334155;
+  line-height: 1.3;
+}
+
+.movements-grid .movement-group-detail-list {
+  background: #f8fafc;
+}
+
+.movements-grid .movement-group-expand-cell {
+  padding-left: 4px !important;
+  padding-right: 0 !important;
+}
+
+.movements-grid .ag-cell-movement-qty.movement-group-qty-summary,
+.movements-grid .ag-cell-movement-qty.movement-group-qty-summary .ag-cell-value {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 0.6875rem;
+  text-transform: lowercase;
+}
+
+.audit-grid .audit-row-warning {
+  background-color: #fffbeb;
+}
+
+.audit-grid .ag-row:hover {
+  background-color: #f1f5f9 !important;
+}
+
+.audit-grid .audit-row-selected.ag-row:hover {
+  background-color: #dbeafe !important;
+}
+
+/* Truncated text cells: ellipsis + tooltip only when overflow (tooltipShowMode: whenTruncated) */
+.compact-data-grid .ag-cell-truncate .ag-cell-value,
+.ag-theme-quartz .ag-cell-truncate .ag-cell-value,
+.ag-theme-alpine .ag-cell-truncate .ag-cell-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  min-width: 0;
+}
+
+/* AG Grid: выделение текста в ячейках (enableCellTextSelection → .ag-selectable) */
+.ag-theme-quartz.ag-selectable .ag-cell .ag-cell-value,
+.ag-theme-alpine.ag-selectable .ag-cell .ag-cell-value,
+.compact-data-grid.ag-selectable .ag-cell .ag-cell-value,
+.ag-theme-quartz.ag-selectable .ag-cell-truncate .ag-cell-value,
+.ag-theme-alpine.ag-selectable .ag-cell-truncate .ag-cell-value {
+  user-select: text;
+  -webkit-user-select: text;
+  pointer-events: auto;
+  cursor: text;
+}
+
+/* AG Grid cell tooltip — above grid, readable wrap, interactive copy */
+.ag-tooltip {
+  z-index: 10060 !important;
+  max-width: min(520px, 90vw);
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  line-height: 1.4 !important;
+  white-space: normal !important;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  background-color: #fff !important;
+  border: 1px solid rgb(226 232 240) !important;
+  box-shadow: 0 4px 12px rgb(15 23 42 / 0.12);
+}
+
+.ag-tooltip.ag-tooltip-interactive {
+  pointer-events: auto !important;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
 }
 
 @custom-variant dark (&:is(.dark *));

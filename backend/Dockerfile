@@ -24,9 +24,12 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json* ./
 COPY prisma ./prisma
-RUN npm ci --omit=dev \
+# Reuse native modules from deps (bcrypt) — avoid node-gyp rebuild without python in runner.
+COPY --from=deps /app/node_modules ./node_modules
+RUN npm prune --omit=dev \
   && npm cache clean --force
 COPY --from=build /app/dist ./dist
+RUN chown -R node:node /app
 USER node
 EXPOSE 3000
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]

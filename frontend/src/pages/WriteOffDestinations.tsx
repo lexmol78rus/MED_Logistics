@@ -23,7 +23,14 @@ import {
   type WriteoffDestinationItem,
 } from '../lib/api/writeoff-destinations';
 import { ApiError } from '../lib/api/client';
-import { createDefaultColDef, sharedGridOptions } from '../lib/agGrid/gridPreset';
+import {
+  badgeColumnDef,
+  compactColumnDef,
+  createDefaultColDef,
+  listGridClassName,
+  primaryTextColumnDef,
+  sharedGridOptions,
+} from '../lib/agGrid/gridPreset';
 
 function formatDateTime(iso: string): string {
   const d = new Date(iso);
@@ -139,36 +146,42 @@ export default function WriteOffDestinations() {
 
   const columnDefs = useMemo<ColDef<WriteoffDestinationItem>[]>(
     () => [
-      { field: 'name', headerName: 'НАЗВАНИЕ', flex: 1, minWidth: 200 },
-      {
+      primaryTextColumnDef({ field: 'name', headerName: 'НАЗВАНИЕ', minWidth: 260 }),
+      badgeColumnDef({
         field: 'isActive',
         headerName: 'СТАТУС',
-        width: 120,
+        minWidth: 120,
+        filter: false,
         cellRenderer: (params: ICellRendererParams<WriteoffDestinationItem>) => {
           const active = params.value as boolean;
           return (
-            <span
-              className={`px-1.5 py-0.5 border rounded text-[8px] font-bold uppercase ${
-                active
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                  : 'bg-slate-100 text-slate-500 border-slate-300'
-              }`}
-            >
-              {active ? 'Активно' : 'Архив'}
-            </span>
+            <div className="flex items-center h-full w-full min-w-0 overflow-hidden">
+              <span
+                className={`shrink-0 px-1.5 py-0.5 border rounded text-[8px] font-bold uppercase whitespace-nowrap ${
+                  active
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                    : 'bg-slate-100 text-slate-500 border-slate-300'
+                }`}
+              >
+                {active ? 'Активно' : 'Архив'}
+              </span>
+            </div>
           );
         },
-      },
-      {
+      }),
+      compactColumnDef({
         field: 'createdAt',
         headerName: 'ДАТА СОЗДАНИЯ',
-        width: 160,
+        minWidth: 120,
+        maxWidth: 170,
         valueFormatter: (p) => formatDateTime(String(p.value ?? '')),
         cellClass: 'font-mono text-xs text-slate-600',
-      },
-      {
+      }),
+      compactColumnDef({
         headerName: '',
-        width: 200,
+        flex: 1,
+        minWidth: 160,
+        maxWidth: 240,
         sortable: false,
         filter: false,
         cellRenderer: (params: ICellRendererParams<WriteoffDestinationItem>) => {
@@ -206,7 +219,7 @@ export default function WriteOffDestinations() {
             </div>
           );
         },
-      },
+      }),
     ],
     [],
   );
@@ -259,7 +272,7 @@ export default function WriteOffDestinations() {
               Загрузка...
             </div>
           )}
-          <div className="ag-theme-alpine absolute inset-0">
+          <div className={`${listGridClassName} absolute inset-0`}>
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"

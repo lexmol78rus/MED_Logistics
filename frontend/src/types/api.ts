@@ -10,6 +10,7 @@ export type ProductListItem = {
   status: string;
   name: string;
   ref: string;
+  lot: string | null;
   manufacturer: string | null;
   qty: number;
   lots: number;
@@ -35,6 +36,13 @@ export type LotListItem = {
   fefoRank: number;
 };
 
+export type MovementCorrectionMeta = {
+  correctedBy: string;
+  correctedAt: string;
+  reason: string;
+  originalReference: string | null;
+};
+
 export type MovementListItem = {
   id: string;
   date: string;
@@ -43,8 +51,18 @@ export type MovementListItem = {
   productName: string;
   ref: string;
   lot: string | null;
+  expiryDate: string | null;
   qty: string;
   user: string;
+  operationGroupId?: string | null;
+  comment?: string | null;
+  isCorrection?: boolean;
+  hasCorrections?: boolean;
+  correctionCount?: number;
+  lastCorrection?: MovementCorrectionMeta | null;
+  correctionSessionId?: string | null;
+  effectiveWriteoffQty?: number | null;
+  editReason?: string | null;
 };
 
 export type ScannerProcessResult = {
@@ -77,6 +95,7 @@ export type WriteoffRecommendation = {
     expiry: string;
     qty: number;
     fefo: boolean;
+    expired?: boolean;
   }[];
 };
 

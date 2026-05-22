@@ -1,18 +1,25 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef, ICellRendererParams } from 'ag-grid-community';
+import { ColDef } from 'ag-grid-community';
 import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
-  compactGridClassName,
+  GRID_FLEX_DEFAULT,
+  GRID_FLEX_WIDE,
+  badgeColumnDef,
+  centeredColumnDef,
+  compactColumnDef,
   compactGridThemeStyle,
   createDefaultColDef,
-  lotsCountColumnDef,
+  flexTextColumnDef,
+  listGridClassName,
+  primaryTextColumnDef,
+  refColumnDef,
   sharedGridOptions,
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
-import { Search, Download, Plus, Filter, Database, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Download, Plus, Filter, Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import ProductFormDialog from '../components/products/ProductFormDialog';
@@ -21,8 +28,10 @@ import { fetchProducts } from '../lib/api/products';
 import { downloadExport } from '../lib/export/download';
 import type { ProductListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
+import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { canCreateProduct, canEditProduct, canExport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
+import { ProductStatusBadge } from '../components/products/ProductStatusBadge';
 
 export default function Products() {
   const userRole = useUserStore((s) => s.user?.role ?? null);
@@ -31,8 +40,6 @@ export default function Products() {
   const rowNavigateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
   const [rowData, setRowData] = useState<ProductListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -59,8 +66,8 @@ export default function Products() {
     setLoading(true);
     try {
       const data = await fetchProducts({
-        page,
-        pageSize,
+        page: 1,
+        pageSize: MAX_PAGE_SIZE,
         search: debouncedSearch || undefined,
         manufacturer: appliedFilters.manufacturer || undefined,
         lowStock: appliedFilters.lowStock || undefined,
@@ -77,61 +84,84 @@ export default function Products() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, appliedFilters]);
+  }, [debouncedSearch, appliedFilters]);
 
   useEffect(() => {
     void loadProducts();
   }, [loadProducts]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, appliedFilters]);
-
   const columnDefs = useMemo<ColDef<ProductListItem>[]>(() => [
-    {
-      field: 'status',
-      headerName: 'СТАТУС',
-      width: 130,
-      pinned: 'left',
-      cellRenderer: (params: ICellRendererParams<ProductListItem>) => {
-        const s = params.value as string;
-        let colorClass = 'bg-slate-100 text-slate-700 border-slate-300';
-        if (s === 'КРИТИЧНО' || s === 'ОТСУТСТВУЕТ') colorClass = 'bg-red-50 text-red-700 border-red-200';
-        if (s === 'ВНИМАНИЕ') colorClass = 'bg-amber-50 text-amber-700 border-amber-200';
-        if (s === 'АКТИВЕН') colorClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
-        return (
-          <div className="flex items-center h-full">
-            <span className={`px-2 py-0.5 border rounded text-[9px] font-bold tracking-wider ${colorClass}`}>
-              {s}
-            </span>
-          </div>
-        );
-      },
-    },
-    { field: 'ref', headerName: 'REF', width: 130, pinned: 'left', cellClass: 'font-mono text-xs font-bold text-slate-600' },
-    { field: 'name', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 200, cellClass: 'font-medium text-slate-800' },
-    { field: 'manufacturer', headerName: 'ИЗГОТОВИТЕЛЬ', width: 160, cellClass: 'text-slate-600 text-xs' },
+    centeredColumnDef(
+      badgeColumnDef({
+        field: 'status',
+        headerName: 'СТАТУС',
+        minWidth: 88,
+        maxWidth: 104,
+        flex: 0.5,
+        filter: false,
+        cellClass: 'ag-cell-status-indicator',
+        tooltipValueGetter: () => null,
+        cellRenderer: (params) => (
+          <ProductStatusBadge status={String(params.value ?? '')} />
+        ),
+      }),
+    ),
+    refColumnDef({
+      field: 'ref',
+      headerName: 'REF',
+      minWidth: 170,
+      cellClass: 'font-mono text-xs font-bold text-slate-600',
+    }),
+    flexTextColumnDef({
+      field: 'lot',
+      headerName: 'LOT',
+      minWidth: 100,
+      cellClass: 'font-mono text-xs font-bold text-slate-600',
+      valueFormatter: (p) => (p.value as string | null) ?? '',
+    }, GRID_FLEX_DEFAULT),
+    primaryTextColumnDef({
+      field: 'name',
+      headerName: 'НОМЕНКЛАТУРА',
+      minWidth: 260,
+      cellClass: 'font-medium text-slate-800',
+    }),
+    flexTextColumnDef({
+      field: 'manufacturer',
+      headerName: 'ИЗГОТОВИТЕЛЬ',
+      minWidth: 160,
+      cellClass: 'text-slate-600 text-xs',
+    }, GRID_FLEX_WIDE),
     stockQtyColumnDef('qty'),
-    lotsCountColumnDef('lots'),
-    {
+    compactColumnDef({
       field: 'nearestExpiry',
       headerName: 'БЛИЖАЙШИЙ СРОК',
-      width: 140,
-      cellClass: 'font-mono text-xs',
+      minWidth: 136,
+      maxWidth: 160,
+      flex: 0.95,
+      cellClass: 'ag-cell-nearest-expiry font-mono text-xs',
+      valueFormatter: (p) => {
+        const v = p.value as string | null | undefined;
+        if (!v || v === 'Н/Д') return '—';
+        return v;
+      },
       cellClassRules: {
+        'text-slate-400 font-normal': (params) => params.value === 'Н/Д' || !params.value,
         'text-red-600 font-bold bg-red-50': (params) => {
-          if (params.value === 'Н/Д') return false;
+          if (params.value === 'Н/Д' || !params.value) return false;
           const diff = new Date(params.value as string).getTime() - Date.now();
           return diff < 30 * 24 * 60 * 60 * 1000;
         },
       },
-    },
-    { field: 'barcode', headerName: 'ШТРИХКОД', width: 130, cellClass: 'font-mono text-[10px] text-slate-400' },
+    }),
+    flexTextColumnDef({
+      field: 'barcode',
+      headerName: 'ШТРИХКОД',
+      minWidth: 110,
+      cellClass: 'font-mono text-[10px] text-slate-400',
+    }, GRID_FLEX_DEFAULT),
   ], []);
 
   const defaultColDef = useMemo(() => createDefaultColDef(), []);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const openCreate = () => {
     setEditing(null);
@@ -185,7 +215,7 @@ export default function Products() {
             </div>
             <input
               type="text"
-              placeholder="Мгновенный поиск по REF, наименованию..."
+              placeholder="Мгновенный поиск по REF, LOT, наименованию..."
               className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-r focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
               value={searchText}
               onChange={(e) => setSearchText(e.target.value)}
@@ -264,20 +294,19 @@ export default function Products() {
             >
               <option value="">Все</option>
               <option value="АКТИВЕН">Активен</option>
-              <option value="ВНИМАНИЕ">Внимание</option>
-              <option value="КРИТИЧНО">Критично</option>
-              <option value="ОТСУТСТВУЕТ">Отсутствует</option>
+              <option value="БЛОК">Блок</option>
+              <option value="КРИТИЧНО">Критичный срок</option>
             </select>
           </div>
         </FilterDrawer>
 
-        <div className="flex-1 w-full relative">
+        <div className="flex-1 w-full min-h-0 relative">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 text-xs font-semibold text-slate-500">
               Загрузка...
             </div>
           )}
-          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
+          <div className={`${listGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"
@@ -307,33 +336,11 @@ export default function Products() {
           </div>
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
+        <div className="shrink-0 px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
           <span>
             Показано {rowData.length} из {total}
+            {total > MAX_PAGE_SIZE ? ` (загружено до ${MAX_PAGE_SIZE})` : ''}
           </span>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 w-7 p-0"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="font-mono font-semibold">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              className="h-7 w-7 p-0"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
         </div>
       </div>
 

@@ -22,12 +22,13 @@ export type ExpirySummary = {
   lt90: number;
   restricted: number;
   total: number;
+  critical: number;
 };
 
 export type ExpiryQuery = {
   page?: number;
   pageSize?: number;
-  filter?: 'expired' | 'lt30' | 'lt90' | 'all';
+  filter?: 'expired' | 'lt30' | 'lt90' | 'all' | 'critical';
   manufacturer?: string;
   status?: string;
 };

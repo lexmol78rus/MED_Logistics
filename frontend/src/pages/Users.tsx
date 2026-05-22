@@ -42,7 +42,15 @@ import {
   PASSWORD_WEAK_HINT,
 } from '../lib/passwordPolicy';
 import { useUserStore } from '../stores/userStore';
-import { createDefaultColDef, sharedGridOptions } from '../lib/agGrid/gridPreset';
+import {
+  compactColumnDef,
+  createDefaultColDef,
+  flexTextColumnDef,
+  listGridClassName,
+  primaryTextColumnDef,
+  sharedGridOptions,
+} from '../lib/agGrid/gridPreset';
+import { MAX_PAGE_SIZE } from '../lib/pagination';
 
 const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'];
 
@@ -58,8 +66,6 @@ export default function Users() {
   const gridRef = useRef<AgGridReact<UserListItem>>(null);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
   const [rowData, setRowData] = useState<UserListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -82,8 +88,8 @@ export default function Users() {
     setLoading(true);
     try {
       const data = await fetchUsers({
-        page,
-        pageSize,
+        page: 1,
+        pageSize: MAX_PAGE_SIZE,
         search: debouncedSearch || undefined,
       });
       setRowData(data.items);
@@ -95,7 +101,7 @@ export default function Users() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch]);
+  }, [debouncedSearch]);
 
   useEffect(() => {
     void loadUsers();
@@ -133,18 +139,18 @@ export default function Users() {
 
   const columnDefs = useMemo<ColDef<UserListItem>[]>(
     () => [
-      {
+      primaryTextColumnDef({
         headerName: 'ИМЯ',
-        flex: 1,
-        minWidth: 140,
+        minWidth: 200,
         valueGetter: (p) => (p.data ? userDisplayName(p.data) : ''),
         cellClass: 'font-medium text-slate-800',
-      },
-      { field: 'email', headerName: 'EMAIL', flex: 1, minWidth: 200 },
-      {
+      }),
+      flexTextColumnDef({ field: 'email', headerName: 'EMAIL', minWidth: 200 }, 2),
+      compactColumnDef({
         field: 'role',
         headerName: 'РОЛЬ',
-        width: 160,
+        minWidth: 150,
+        filter: false,
         cellRenderer: (params: ICellRendererParams<UserListItem>) => {
           const user = params.data;
           if (!user) return null;
@@ -163,11 +169,12 @@ export default function Users() {
             </select>
           );
         },
-      },
-      {
+      }),
+      compactColumnDef({
         field: 'isActive',
         headerName: 'СТАТУС',
-        width: 110,
+        minWidth: 120,
+        filter: false,
         cellRenderer: (params: ICellRendererParams<UserListItem>) => (
           <span
             className={
@@ -179,24 +186,30 @@ export default function Users() {
             {params.value ? 'Активен' : 'Отключён'}
           </span>
         ),
-      },
-      {
+      }),
+      compactColumnDef({
         field: 'lastLoginAt',
         headerName: 'ПОСЛЕДНИЙ ВХОД',
-        width: 150,
+        minWidth: 120,
+        maxWidth: 160,
         valueFormatter: (p) => formatDateTime(p.value as string | null),
         cellClass: 'font-mono text-[10px] text-slate-600',
-      },
-      {
+      }),
+      compactColumnDef({
         field: 'createdAt',
         headerName: 'СОЗДАН',
-        width: 150,
+        minWidth: 120,
+        maxWidth: 160,
         valueFormatter: (p) => formatDateTime(p.value as string),
         cellClass: 'font-mono text-[10px] text-slate-500',
-      },
-      {
+      }),
+      compactColumnDef({
         headerName: 'ДЕЙСТВИЯ',
-        width: 280,
+        flex: 1.4,
+        minWidth: 240,
+        maxWidth: 340,
+        sortable: false,
+        filter: false,
         cellRenderer: (params: ICellRendererParams<UserListItem>) => {
           const user = params.data;
           if (!user) return null;
@@ -235,7 +248,7 @@ export default function Users() {
             </div>
           );
         },
-      },
+      }),
     ],
     [currentUser?.userId, handleRoleChange, handleToggleActive],
   );
@@ -339,13 +352,13 @@ export default function Users() {
           </div>
         </div>
 
-        <div className="flex-1 w-full relative">
+        <div className="flex-1 w-full min-h-0 relative">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 text-xs font-semibold text-slate-500">
               Загрузка...
             </div>
           )}
-          <div className="ag-theme-quartz absolute inset-0" style={gridThemeStyle}>
+          <div className={`${listGridClassName} absolute inset-0`} style={gridThemeStyle}>
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"
@@ -359,8 +372,11 @@ export default function Users() {
           </div>
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
-          Всего: {total}
+        <div className="shrink-0 px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
+          <span>
+            Показано {rowData.length} из {total}
+            {total > MAX_PAGE_SIZE ? ` (загружено до ${MAX_PAGE_SIZE})` : ''}
+          </span>
         </div>
       </div>
 

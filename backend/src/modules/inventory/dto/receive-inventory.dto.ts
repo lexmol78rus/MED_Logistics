@@ -38,4 +38,9 @@ export class ReceiveInventoryDto {
   @IsString()
   @MaxLength(64)
   location?: string;
+
+  /** Link this receive to an active expected receipt (partial receive supported). */
+  @IsOptional()
+  @IsString()
+  expectedReceiptId?: string;
 }

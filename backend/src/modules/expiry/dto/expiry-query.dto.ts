@@ -3,8 +3,8 @@ import { SearchPaginationQueryDto } from '../../../common/dto/search-pagination-
 
 export class ExpiryQueryDto extends SearchPaginationQueryDto {
   @IsOptional()
-  @IsIn(['expired', 'lt30', 'lt90', 'all'])
-  filter?: 'expired' | 'lt30' | 'lt90' | 'all';
+  @IsIn(['expired', 'lt30', 'lt90', 'all', 'critical'])
+  filter?: 'expired' | 'lt30' | 'lt90' | 'all' | 'critical';
 
   @IsOptional()
   @IsString()

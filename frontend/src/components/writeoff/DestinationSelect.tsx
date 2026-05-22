@@ -5,7 +5,7 @@ import { ApiError } from '../../lib/api/client';
 
 type Props = {
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, label?: string) => void;
   className?: string;
   selectClassName?: string;
   placeholder?: string;
@@ -51,9 +51,17 @@ export default function DestinationSelect({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((d) => d.name.toLowerCase().includes(q));
-  }, [items, search]);
+    let list = q
+      ? items.filter((d) => d.name.toLowerCase().includes(q))
+      : items;
+    if (value) {
+      const selected = items.find((d) => d.id === value);
+      if (selected && !list.some((d) => d.id === value)) {
+        list = [selected, ...list];
+      }
+    }
+    return list;
+  }, [items, search, value]);
 
   return (
     <div className={className}>
@@ -68,7 +76,11 @@ export default function DestinationSelect({
       <select
         className={`w-full h-9 mt-1 px-2 text-sm border border-slate-300 rounded bg-white focus:outline-none focus:border-blue-500 ${selectClassName}`}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const id = e.target.value;
+          const label = items.find((d) => d.id === id)?.name;
+          onChange(id, label);
+        }}
         disabled={disabled || loading}
       >
         <option value="">{loading ? 'Загрузка…' : placeholder}</option>

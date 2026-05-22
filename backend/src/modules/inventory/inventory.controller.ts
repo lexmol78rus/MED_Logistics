@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Post, Query } from '@nestjs/common';
 import {
+  ADMIN_MANAGER,
   ADMIN_MANAGER_OPERATOR,
   ADMIN_ONLY,
   READ_ROLES,
@@ -11,6 +12,8 @@ import { JwtUser } from '../../common/interfaces/jwt-user.interface';
 import { InventoryBalanceQueryDto } from './dto/inventory-balance-query.dto';
 import { ReceiveInventoryDto } from './dto/receive-inventory.dto';
 import { WriteoffInventoryDto } from './dto/writeoff-inventory.dto';
+import { WriteoffBatchDto } from './dto/writeoff-batch.dto';
+import { CorrectWriteoffGroupDto } from './dto/correct-writeoff-group.dto';
 import { WriteoffRecommendationQueryDto } from './dto/writeoff-recommendation-query.dto';
 import { InventoryBalanceService } from './inventory-balance.service';
 import { InventoryValidationService } from './inventory-validation.service';
@@ -64,5 +67,23 @@ export class InventoryController {
     @CurrentUser() user?: JwtUser,
   ) {
     return this.inventory.writeoff(dto, user?.email, user?.userId);
+  }
+
+  @Roles(...ADMIN_MANAGER_OPERATOR)
+  @Post('writeoff/batch')
+  writeoffBatch(
+    @Body() dto: WriteoffBatchDto,
+    @CurrentUser() user?: JwtUser,
+  ) {
+    return this.inventory.writeoffBatch(dto, user?.email, user?.userId);
+  }
+
+  @Roles(...ADMIN_MANAGER)
+  @Post('writeoff/correct')
+  correctWriteoffGroup(
+    @Body() dto: CorrectWriteoffGroupDto,
+    @CurrentUser() user?: JwtUser,
+  ) {
+    return this.inventory.correctWriteoffGroup(dto, user?.email, user?.userId);
   }
 }

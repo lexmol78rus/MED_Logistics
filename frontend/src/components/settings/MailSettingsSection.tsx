@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useState } from 'react';
+import { Mail, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -10,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { ApiError } from '../../lib/api/client';
 import {
@@ -19,6 +21,13 @@ import {
   type EmailNotificationFlags,
   type MailSettings,
 } from '../../lib/api/mailSettings';
+import { SettingsToggleRow } from './SettingsFormPrimitives';
+import {
+  settingsCardBodyClass,
+  settingsCardClass,
+  settingsCardFooterClass,
+  settingsCardHeaderClass,
+} from './settingsStyles';
 
 const NOTIFICATION_LABELS: {
   key: keyof EmailNotificationFlags;
@@ -33,22 +42,26 @@ const NOTIFICATION_LABELS: {
   { key: 'system', label: 'Системные уведомления' },
 ];
 
-const EMPTY_FORM = {
+const EMPTY_SMTP_FORM = {
   host: 'smtp.yandex.ru',
   port: '465',
   user: '',
   from: '',
   secure: true,
   password: '',
-  testEmail: 'am@medicine-2000.ru',
 };
+
+const mailInputClass =
+  'h-9 border-slate-200 shadow-none hover:border-slate-300 focus-visible:border-blue-500 focus-visible:ring-blue-500/20';
 
 export function MailSettingsSection() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [mail, setMail] = useState<MailSettings | null>(null);
-  const [form, setForm] = useState(EMPTY_FORM);
+  const [form, setForm] = useState(EMPTY_SMTP_FORM);
+  /** Ephemeral: only for one-off test send, never persisted. */
+  const [testEmail, setTestEmail] = useState('');
   const [notifications, setNotifications] = useState<EmailNotificationFlags>({
     passwordReset: true,
     lowStock: false,
@@ -75,7 +88,6 @@ export function MailSettingsSection() {
         from: data.smtp.from,
         secure: data.smtp.secure,
         password: '',
-        testEmail: form.testEmail,
       });
       setNotifications(data.notifications);
     } catch (err) {
@@ -116,9 +128,9 @@ export function MailSettingsSection() {
   }
 
   async function handleTest() {
-    const to = form.testEmail.trim();
+    const to = testEmail.trim();
     if (!to) {
-      toast.error('Укажите тестовый email');
+      toast.error('Введите email для отправки тестового письма');
       return;
     }
     setTesting(true);
@@ -135,12 +147,13 @@ export function MailSettingsSection() {
 
   if (loading) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Почта и уведомления</CardTitle>
-          <CardDescription>Загрузка…</CardDescription>
-        </CardHeader>
-      </Card>
+      <section className="space-y-3">
+        <div className="h-5 w-48 animate-pulse rounded bg-slate-100" />
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className={cn(settingsCardClass, 'min-h-[280px] animate-pulse bg-slate-50/50')} />
+          <Card className={cn(settingsCardClass, 'min-h-[280px] animate-pulse bg-slate-50/50')} />
+        </div>
+      </section>
     );
   }
 
@@ -151,16 +164,17 @@ export function MailSettingsSection() {
       : 'SMTP не настроен';
 
   const statusClass = mail?.smtpReady
-    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
-    : 'bg-amber-50 text-amber-800 border-amber-200';
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+    : 'border-amber-200 bg-amber-50 text-amber-800';
 
   return (
-    <div className="space-y-4">
+    <section className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700">
-          Почта и уведомления
-        </h3>
-        <span className={`text-xs px-2 py-0.5 rounded border ${statusClass}`}>
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-slate-500" />
+          <h2 className="text-sm font-semibold text-slate-900">Почта и уведомления</h2>
+        </div>
+        <span className={cn('rounded-full border px-2.5 py-0.5 text-xs font-medium', statusClass)}>
           {statusLabel}
         </span>
         {mail?.source && mail.source !== 'none' ? (
@@ -170,58 +184,77 @@ export function MailSettingsSection() {
         ) : null}
       </div>
 
-      <form onSubmit={(e) => void handleSave(e)} className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">SMTP</CardTitle>
-            <CardDescription>Параметры исходящей почты (Yandex и др.)</CardDescription>
+      <form onSubmit={(e) => void handleSave(e)} className="grid gap-6 lg:grid-cols-2">
+        <Card className={settingsCardClass}>
+          <CardHeader className={settingsCardHeaderClass}>
+            <CardTitle className="text-sm font-semibold text-slate-900">SMTP</CardTitle>
+            <CardDescription className="text-xs">
+              Параметры исходящей почты (Yandex и др.)
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="smtp-host">SMTP Host</Label>
+          <CardContent className={`${settingsCardBodyClass} grid gap-4`}>
+            <div className="space-y-1.5">
+              <Label htmlFor="smtp-host" className="text-xs font-medium text-slate-600">
+                SMTP Host
+              </Label>
               <Input
                 id="smtp-host"
+                className={mailInputClass}
                 value={form.host}
                 onChange={(e) => setForm((f) => ({ ...f, host: e.target.value }))}
                 placeholder="smtp.yandex.ru"
                 required
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-port">SMTP Port</Label>
-              <Input
-                id="smtp-port"
-                type="number"
-                value={form.port}
-                onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
-                required
-              />
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-port" className="text-xs font-medium text-slate-600">
+                  SMTP Port
+                </Label>
+                <Input
+                  id="smtp-port"
+                  type="number"
+                  className={mailInputClass}
+                  value={form.port}
+                  onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="smtp-user" className="text-xs font-medium text-slate-600">
+                  SMTP User
+                </Label>
+                <Input
+                  id="smtp-user"
+                  type="email"
+                  className={mailInputClass}
+                  value={form.user}
+                  onChange={(e) => setForm((f) => ({ ...f, user: e.target.value }))}
+                  placeholder="noreply@medicine-2000.ru"
+                />
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtp-user">SMTP User</Label>
-              <Input
-                id="smtp-user"
-                type="email"
-                value={form.user}
-                onChange={(e) => setForm((f) => ({ ...f, user: e.target.value }))}
-                placeholder="noreply@medicine-2000.ru"
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="smtp-from">SMTP From</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="smtp-from" className="text-xs font-medium text-slate-600">
+                SMTP From
+              </Label>
               <Input
                 id="smtp-from"
+                className={mailInputClass}
                 value={form.from}
                 onChange={(e) => setForm((f) => ({ ...f, from: e.target.value }))}
                 placeholder="noreply@medicine-2000.ru"
               />
             </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="smtp-password">SMTP Password</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="smtp-password" className="text-xs font-medium text-slate-600">
+                SMTP Password
+              </Label>
               <Input
                 id="smtp-password"
                 type="password"
                 autoComplete="new-password"
+                className={mailInputClass}
                 value={form.password}
                 onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
                 placeholder={
@@ -231,70 +264,74 @@ export function MailSettingsSection() {
                 }
               />
             </div>
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={form.secure}
-                onChange={(e) => setForm((f) => ({ ...f, secure: e.target.checked }))}
-              />
-              Secure connection (SSL/TLS, порт 465)
-            </label>
+            <SettingsToggleRow
+              checked={form.secure}
+              onChange={(v) => setForm((f) => ({ ...f, secure: v }))}
+              label="Secure connection (SSL/TLS)"
+              description="Обычно порт 465"
+            />
           </CardContent>
+          <div className={`${settingsCardFooterClass} space-y-3 border-t`}>
+            <p className="text-xs font-medium text-slate-600">Тест SMTP</p>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label htmlFor="test-email" className="text-xs font-medium text-slate-600">
+                  Тестовый email
+                </Label>
+                <Input
+                  id="test-email"
+                  type="email"
+                  className={mailInputClass}
+                  value={testEmail}
+                  onChange={(e) => setTestEmail(e.target.value)}
+                  placeholder="Введите email для тестового письма"
+                  autoComplete="off"
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={testing || saving}
+                onClick={() => void handleTest()}
+                className="h-9 shrink-0 gap-1.5 border-slate-200"
+              >
+                <Send className="h-3.5 w-3.5" />
+                {testing ? 'Отправка…' : 'Отправить тест'}
+              </Button>
+            </div>
+          </div>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Email уведомления</CardTitle>
-            <CardDescription>Какие события дублировать на почту администраторам</CardDescription>
+        <Card className={settingsCardClass}>
+          <CardHeader className={settingsCardHeaderClass}>
+            <CardTitle className="text-sm font-semibold text-slate-900">
+              Email уведомления
+            </CardTitle>
+            <CardDescription className="text-xs">
+              Какие события дублировать на почту администраторам
+            </CardDescription>
           </CardHeader>
-          <CardContent className="grid gap-2 sm:grid-cols-2">
+          <CardContent className={`${settingsCardBodyClass} grid gap-2.5 sm:grid-cols-2`}>
             {NOTIFICATION_LABELS.map(({ key, label }) => (
-              <label key={key} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={notifications[key]}
-                  onChange={(e) =>
-                    setNotifications((n) => ({ ...n, [key]: e.target.checked }))
-                  }
-                />
-                {label}
-              </label>
+              <SettingsToggleRow
+                key={key}
+                checked={notifications[key]}
+                onChange={(v) => setNotifications((n) => ({ ...n, [key]: v }))}
+                label={label}
+              />
             ))}
           </CardContent>
-          <CardFooter className="border-t">
-            <Button type="submit" disabled={saving} className="bg-blue-700 hover:bg-blue-800">
-              {saving ? 'Сохранение…' : 'Сохранить'}
+          <CardFooter className={settingsCardFooterClass}>
+            <Button
+              type="submit"
+              disabled={saving}
+              className="h-9 w-full bg-blue-700 hover:bg-blue-800 sm:w-auto"
+            >
+              {saving ? 'Сохранение…' : 'Сохранить почту'}
             </Button>
           </CardFooter>
         </Card>
       </form>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Тест SMTP</CardTitle>
-          <CardDescription>Отправка проверочного письма с HTML-шаблоном</CardDescription>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="test-email">Тестовый email</Label>
-            <Input
-              id="test-email"
-              type="email"
-              value={form.testEmail}
-              onChange={(e) => setForm((f) => ({ ...f, testEmail: e.target.value }))}
-            />
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            disabled={testing || saving}
-            onClick={() => void handleTest()}
-            className="shrink-0"
-          >
-            {testing ? 'Отправка…' : 'Отправить тестовое письмо'}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
+    </section>
   );
 }

@@ -2,11 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { LotStatus, Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
+import { buildCriticalRiskLotWhere, EXPIRY_DAY_MS } from '../../common/utils/expiry-critical.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExpiryQueryDto } from './dto/expiry-query.dto';
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+const DAY_MS = EXPIRY_DAY_MS;
 
 export type ExpiryListItem = {
   id: string;
@@ -41,13 +42,19 @@ export class ExpiryService {
     const in30 = new Date(now + 30 * DAY_MS);
     const in90 = new Date(now + 90 * DAY_MS);
 
-    const where: Prisma.LotWhereInput = {
-      expiryDate: { not: null },
-      inventoryRows: { some: { quantity: { gt: 0 } } },
-      ...(query.manufacturer
-        ? { product: { manufacturer: { contains: query.manufacturer, mode: 'insensitive' } } }
-        : {}),
-    };
+    const where: Prisma.LotWhereInput =
+      query.filter === 'critical'
+        ? buildCriticalRiskLotWhere()
+        : {
+            expiryDate: { not: null },
+            inventoryRows: { some: { quantity: { gt: 0 } } },
+          };
+
+    if (query.manufacturer) {
+      where.product = {
+        manufacturer: { contains: query.manufacturer, mode: 'insensitive' },
+      };
+    }
 
     if (query.filter === 'expired') {
       where.expiryDate = { lt: new Date() };
@@ -55,7 +62,7 @@ export class ExpiryService {
       where.expiryDate = { gte: new Date(), lte: in30 };
     } else if (query.filter === 'lt90') {
       where.expiryDate = { gt: in30, lte: in90 };
-    } else {
+    } else if (query.filter !== 'critical') {
       // All risks: expiry buckets + isolated lots (quarantine / block)
       where.OR = [
         { expiryDate: { lt: new Date() } },
@@ -174,6 +181,13 @@ export class ExpiryService {
       this.prisma.lot.count({ where: riskWhere }),
     ]);
 
-    return { expired, lt30, lt90, restricted, total };
+    const critical = await this.countCriticalRisks();
+
+    return { expired, lt30, lt90, restricted, total, critical };
+  }
+
+  /** Same predicate as Dashboard KPI and widget (`filter=critical`). */
+  countCriticalRisks(now = new Date()): Promise<number> {
+    return this.prisma.lot.count({ where: buildCriticalRiskLotWhere(now) });
   }
 }

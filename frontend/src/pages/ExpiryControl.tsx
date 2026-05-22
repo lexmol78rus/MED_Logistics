@@ -5,10 +5,16 @@ import { ColDef, ICellRendererParams } from 'ag-grid-community';
 import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
+  GRID_CELL_CLASS_BADGE,
+  badgeColumnDef,
+  compactColumnDef,
   compactGridClassName,
   compactGridThemeStyle,
   createDefaultColDef,
+  flexTextColumnDef,
   numericColumnDef,
+  primaryTextColumnDef,
+  refColumnDef,
   sharedGridOptions,
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
@@ -97,26 +103,24 @@ export default function ExpiryControl() {
 
   const columnDefs = useMemo<ColDef<ExpiryListItem>[]>(
     () => [
-      {
+      badgeColumnDef({
         field: 'status',
         headerName: 'Статус',
-        width: 128,
-        minWidth: 128,
-        pinned: 'left',
+        minWidth: 120,
         sortable: true,
         filter: 'agTextColumnFilter',
         cellStyle: statusCellStyle,
+        cellClass: GRID_CELL_CLASS_BADGE,
         cellRenderer: (params: ICellRendererParams<ExpiryListItem>) => {
           const row = params.data;
           if (!row) return null;
           return <ExpiryStatusBadge row={row} />;
         },
-      },
+      }),
       numericColumnDef({
         field: 'days',
         headerName: 'Осталось (дней)',
-        width: 140,
-        minWidth: 140,
+        minWidth: 110,
         maxWidth: 140,
         cellClassRules: {
           'text-rose-600 font-bold': (p) => (p.value as number) < 0,
@@ -130,16 +134,38 @@ export default function ExpiryControl() {
           },
         },
       }),
-      { field: 'expiry', headerName: 'Срок годности', width: 130, cellClass: 'font-mono text-xs text-slate-700' },
-      { field: 'lot', headerName: 'LOT / Партия', width: 140, cellClass: 'font-mono text-xs font-bold' },
-      { field: 'ref', headerName: 'REF', width: 110, cellClass: 'font-mono text-xs text-slate-500' },
-      { field: 'name', headerName: 'Номенклатура', flex: 1, minWidth: 200, cellClass: 'text-xs text-slate-800 font-medium' },
+      compactColumnDef({
+        field: 'expiry',
+        headerName: 'Срок годности',
+        minWidth: 110,
+        maxWidth: 140,
+        cellClass: 'font-mono text-xs text-slate-700',
+      }),
+      flexTextColumnDef({
+        field: 'lot',
+        headerName: 'LOT / Партия',
+        minWidth: 100,
+        maxWidth: 150,
+        cellClass: 'font-mono text-xs font-bold',
+      }),
+      refColumnDef({
+        field: 'ref',
+        headerName: 'REF',
+        minWidth: 170,
+        cellClass: 'font-mono text-xs text-slate-500',
+      }),
+      primaryTextColumnDef({
+        field: 'name',
+        headerName: 'Номенклатура',
+        minWidth: 260,
+        cellClass: 'text-xs text-slate-800 font-medium',
+      }),
       stockQtyColumnDef('qty', { headerName: 'Остаток' }),
-      {
+      compactColumnDef({
         headerName: 'Действия',
-        width: 210,
-        minWidth: 210,
-        pinned: 'right',
+        flex: 1.2,
+        minWidth: 200,
+        maxWidth: 280,
         sortable: false,
         filter: false,
         cellStyle: actionsCellStyle,
@@ -179,7 +205,7 @@ export default function ExpiryControl() {
             </div>
           );
         },
-      },
+      }),
     ],
     [actionId, navigate, showActions],
   );

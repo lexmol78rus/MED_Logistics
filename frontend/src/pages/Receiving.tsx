@@ -4,6 +4,10 @@ import { ScanLine, CheckCircle2, ArrowDownToLine, Keyboard, AlertCircle } from '
 import { toast } from 'sonner';
 import { processScanner } from '../lib/api/scanner';
 import { receiveInventory } from '../lib/api/inventory';
+import {
+  fetchActiveExpectedReceipts,
+  type ExpectedReceipt,
+} from '../lib/api/expected-receipts';
 import type { QuickCreateProductResult } from '../lib/api/products';
 import { ApiError } from '../lib/api/client';
 import { useScannerField } from '../lib/scanner/useScannerField';
@@ -34,6 +38,8 @@ export default function Receiving() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [pendingBarcode, setPendingBarcode] = useState<string | null>(null);
   const [pendingReceivingFlow, setPendingReceivingFlow] = useState(false);
+  const [activeExpected, setActiveExpected] = useState<ExpectedReceipt[]>([]);
+  const [linkedExpectedId, setLinkedExpectedId] = useState<string | null>(null);
 
   const resumeReceivingFlow = useCallback((product: QuickCreateProductResult, scannedBarcode: string) => {
     setScannedProduct({
@@ -82,6 +88,16 @@ export default function Receiving() {
         barcode: result.product.barcode,
       });
       setPendingReceivingFlow(false);
+      setLinkedExpectedId(null);
+      try {
+        const expected = await fetchActiveExpectedReceipts(result.product.id);
+        setActiveExpected(expected);
+        if (expected.length === 1) {
+          setLinkedExpectedId(expected[0].id);
+        }
+      } catch {
+        setActiveExpected([]);
+      }
       toast.success('Товар идентифицирован в базе.');
     } catch (err) {
       if (shouldOpenReceivingCreateModal(userRole) && isNotFoundScanError(err)) {
@@ -147,6 +163,7 @@ export default function Receiving() {
         lotNumber: lot.trim(),
         expiryDate: expiry,
         quantity,
+        ...(linkedExpectedId ? { expectedReceiptId: linkedExpectedId } : {}),
       });
       toast.success('ТМЦ успешно оприходованы на склад.');
 
@@ -156,6 +173,8 @@ export default function Receiving() {
       setExpiry('');
       setQty('');
       setPendingReceivingFlow(false);
+      setActiveExpected([]);
+      setLinkedExpectedId(null);
       restoreFocus();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Ошибка оприходования');
@@ -278,6 +297,53 @@ export default function Receiving() {
                   />
                 </div>
               </div>
+
+              {activeExpected.length > 0 && (
+                <div className="bg-blue-50 border border-blue-200 rounded p-4 space-y-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-blue-800">
+                    Ожидается поступление
+                  </p>
+                  {activeExpected.map((er) => (
+                    <div
+                      key={er.id}
+                      className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 p-2 rounded border ${
+                        linkedExpectedId === er.id
+                          ? 'border-blue-400 bg-white'
+                          : 'border-blue-100 bg-blue-50/50'
+                      }`}
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-800">
+                          {er.comment ?? 'Без комментария'}
+                        </p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">
+                          Осталось принять:{' '}
+                          <span className="font-mono font-bold text-blue-700">
+                            {er.remainingQty.toLocaleString('ru-RU')}
+                          </span>
+                          {' '}
+                          из {er.orderedQty.toLocaleString('ru-RU')}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={linkedExpectedId === er.id ? 'default' : 'outline'}
+                        className={`h-8 text-[10px] font-bold shrink-0 ${
+                          linkedExpectedId === er.id
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : 'border-blue-300 text-blue-700'
+                        }`}
+                        onClick={() =>
+                          setLinkedExpectedId(linkedExpectedId === er.id ? null : er.id)
+                        }
+                      >
+                        {linkedExpectedId === er.id ? 'Связано' : 'Связать поступление'}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               <div className="bg-amber-50 border border-amber-200 text-amber-800 p-3 rounded flex items-start gap-3">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />

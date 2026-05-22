@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { fetchMe } from '../../lib/api/users';
 import { useAuthStore } from '../../stores/authStore';
+import { syncWriteoffDraftOwner } from '../../stores/writeoffDraftStore';
 import { useUserStore } from '../../stores/userStore';
 
 interface AuthHydrationGateProps {
@@ -30,6 +31,7 @@ export default function AuthHydrationGate({ children }: AuthHydrationGateProps) 
 
     if (!hasValidToken) {
       clearUser();
+      syncWriteoffDraftOwner(null);
       setProfileLoaded(true);
       return;
     }
@@ -41,6 +43,7 @@ export default function AuthHydrationGate({ children }: AuthHydrationGateProps) 
           email: res.user.email,
           role: res.user.role,
         });
+        syncWriteoffDraftOwner(res.user.userId);
       })
       .catch(() => {
         useAuthStore.getState().clearAuth();

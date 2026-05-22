@@ -5,14 +5,20 @@ import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
   centeredColumnDef,
-  compactGridClassName,
+  GRID_FLEX_WIDE,
+  badgeColumnDef,
+  compactColumnDef,
   compactGridThemeStyle,
   createDefaultColDef,
+  flexTextColumnDef,
+  listGridClassName,
+  primaryTextColumnDef,
+  refColumnDef,
   sharedGridOptions,
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
-import { Boxes, Search, ShieldAlert, Ban, ChevronLeft, ChevronRight, ShieldCheck, Filter, Download } from 'lucide-react';
+import { Boxes, Search, ShieldAlert, Ban, ShieldCheck, Filter, Download } from 'lucide-react';
 import FilterDrawer from '../components/filters/FilterDrawer';
 import { downloadExport } from '../lib/export/download';
 import { canExport } from '../lib/rbac/permissions';
@@ -21,6 +27,7 @@ import { toast } from 'sonner';
 import { fetchLots, updateLotStatus } from '../lib/api/lots';
 import type { LotListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
+import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { canManageLotStatus } from '../lib/rbac/permissions';
 import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
 import { useUserStore } from '../stores/userStore';
@@ -62,8 +69,6 @@ export default function Lots() {
     blocked: false,
   });
   const [fefoEnabled, setFefoEnabled] = useState(true);
-  const [page, setPage] = useState(1);
-  const [pageSize] = useState(20);
   const [rowData, setRowData] = useState<LotListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -82,8 +87,8 @@ export default function Lots() {
     setLoading(true);
     try {
       const data = await fetchLots({
-        page,
-        pageSize,
+        page: 1,
+        pageSize: MAX_PAGE_SIZE,
         search: debouncedSearch || undefined,
         fefo: fefoEnabled,
         productId: productIdFilter || undefined,
@@ -101,15 +106,11 @@ export default function Lots() {
     } finally {
       setLoading(false);
     }
-  }, [page, pageSize, debouncedSearch, fefoEnabled, productIdFilter, appliedFilters]);
+  }, [debouncedSearch, fefoEnabled, productIdFilter, appliedFilters]);
 
   useEffect(() => {
     void loadLots();
   }, [loadLots]);
-
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, appliedFilters, fefoEnabled, productIdFilter]);
 
   const handleStatus = useCallback(async (lot: LotListItem, status: 'QUARANTINE' | 'BLOCKED' | 'OK') => {
     setActionLotId(lot.id);
@@ -134,30 +135,51 @@ export default function Lots() {
     centeredColumnDef({
       field: 'fefoRank',
       headerName: 'FEFO',
-      width: 72,
-      minWidth: 72,
+      flex: 0.4,
+      minWidth: 56,
       maxWidth: 72,
-      suppressSizeToFit: true,
       cellClass: 'font-mono text-xs font-bold text-blue-700',
     }),
-    { field: 'ref', headerName: 'REF', width: 120, cellClass: 'font-mono text-xs font-bold text-slate-600' },
-    { field: 'productName', headerName: 'НОМЕНКЛАТУРА', flex: 1, minWidth: 180, cellClass: 'font-medium text-slate-800 text-xs' },
-    { field: 'lot', headerName: 'LOT / ПАРТИЯ', width: 130, cellClass: 'font-mono text-xs font-bold' },
-    {
+    refColumnDef({
+      field: 'ref',
+      headerName: 'REF',
+      minWidth: 170,
+      cellClass: 'font-mono text-xs font-bold text-slate-600',
+    }),
+    primaryTextColumnDef({
+      field: 'productName',
+      headerName: 'НОМЕНКЛАТУРА',
+      minWidth: 260,
+      cellClass: 'font-medium text-slate-800 text-xs',
+    }),
+    flexTextColumnDef({
+      field: 'lot',
+      headerName: 'LOT / ПАРТИЯ',
+      minWidth: 130,
+      cellClass: 'font-mono text-xs font-bold',
+    }, GRID_FLEX_WIDE),
+    compactColumnDef({
       field: 'expiryDate',
       headerName: 'ГОДЕН ДО',
-      width: 120,
+      minWidth: 120,
       valueFormatter: (p) => (p.value as string | null) ?? 'Н/Д',
       cellClass: (params) => expiryCellClass(params.value as string | null),
-    },
+    }),
     stockQtyColumnDef('qty'),
     ...(SHOW_WAREHOUSE_LOCATIONS
-      ? [{ field: 'location' as const, headerName: 'ЛОКАЦИЯ', width: 120, cellClass: 'text-xs text-slate-600', valueFormatter: (p: { value: unknown }) => (p.value as string | null) ?? '—' }]
+      ? [flexTextColumnDef({
+          field: 'location' as const,
+          headerName: 'ЛОКАЦИЯ',
+          minWidth: 120,
+          cellClass: 'text-xs text-slate-600',
+          valueFormatter: (p: { value: unknown }) => (p.value as string | null) ?? '—',
+        })]
       : []),
-    {
+    badgeColumnDef({
       field: 'status',
       headerName: 'СТАТУС',
-      width: 110,
+      minWidth: 120,
+      filter: false,
       cellRenderer: (params: ICellRendererParams<LotListItem>) => {
         const s = params.value as string;
         let cls = 'bg-emerald-50 text-emerald-700 border-emerald-200';
@@ -165,14 +187,18 @@ export default function Lots() {
         if (s === 'БЛОК') cls = 'bg-red-50 text-red-700 border-red-200';
         if (s === 'ВНИМАНИЕ') cls = 'bg-amber-50 text-amber-700 border-amber-200';
         return (
-          <span className={`px-1.5 py-0.5 border rounded text-[8px] font-bold uppercase ${cls}`}>{s}</span>
+          <div className="flex items-center h-full w-full min-w-0 overflow-hidden">
+            <span className={`shrink-0 px-1.5 py-0.5 border rounded text-[8px] font-bold uppercase whitespace-nowrap ${cls}`}>{s}</span>
+          </div>
         );
       },
-    },
+    }),
     ...(showLotActions
-      ? [{
+      ? [compactColumnDef({
       headerName: 'ДЕЙСТВИЯ',
-      width: 260,
+      flex: 1.4,
+      minWidth: 220,
+      maxWidth: 320,
       sortable: false,
       filter: false,
       cellRenderer: (params: ICellRendererParams<LotListItem>) => {
@@ -229,13 +255,11 @@ export default function Lots() {
           </div>
         );
       },
-    }]
+    })]
       : []),
   ], [actionLotId, handleStatus, showLotActions]);
 
   const defaultColDef = useMemo(() => createDefaultColDef(), []);
-
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   return (
     <div className="h-full flex flex-col max-w-screen-2xl mx-auto gap-4">
@@ -305,13 +329,13 @@ export default function Lots() {
           )}
         </div>
 
-        <div className="flex-1 relative">
+        <div className="flex-1 w-full min-h-0 relative">
           {loading && (
             <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/60 text-xs font-semibold text-slate-500">
               Загрузка...
             </div>
           )}
-          <div className={`${compactGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
+          <div className={`${listGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"
@@ -325,19 +349,11 @@ export default function Lots() {
           </div>
         </div>
 
-        <div className="px-3 py-2 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-600">
+        <div className="shrink-0 px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
           <span>
             Показано {rowData.length} из {total}
+            {total > MAX_PAGE_SIZE ? ` (загружено до ${MAX_PAGE_SIZE})` : ''}
           </span>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <span className="font-mono font-semibold">{page} / {totalPages}</span>
-            <Button variant="outline" size="sm" className="h-7 w-7 p-0" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
         </div>
       </div>
 

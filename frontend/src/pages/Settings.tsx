@@ -1,16 +1,34 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ArrowRightLeft } from 'lucide-react';
+import {
+  ArrowRightLeft,
+  CalendarClock,
+  ChevronRight,
+  LayoutGrid,
+  ScanLine,
+  Settings2,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
+  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { toast } from 'sonner';
 import { MailSettingsSection } from '../components/settings/MailSettingsSection';
+import {
+  SettingsNumberField,
+  SettingsToggleRow,
+} from '../components/settings/SettingsFormPrimitives';
+import {
+  settingsCardBodyClass,
+  settingsCardClass,
+  settingsCardFooterClass,
+  settingsCardHeaderClass,
+} from '../components/settings/settingsStyles';
 import { fetchSettings, patchSettings } from '../lib/api/settings';
 import { ApiError } from '../lib/api/client';
 import {
@@ -82,33 +100,49 @@ export default function Settings() {
 
   if (loading) {
     return (
-      <div className="max-w-3xl mx-auto p-4 py-12 text-center text-sm text-slate-500">
+      <div className="mx-auto w-full max-w-6xl px-4 py-16 text-center text-sm text-slate-500">
         Загрузка настроек…
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-4 flex flex-col gap-6 pb-10">
-      <div>
-        <h2 className="text-xl font-bold text-slate-800">Настройки</h2>
-        <p className="text-sm text-slate-500 mt-1">
-          Параметры склада, интерфейса и почтовых уведомлений
-        </p>
-      </div>
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-10 pt-1 lg:gap-7">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3.5">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white shadow-sm">
+            <Settings2 className="h-5 w-5 text-slate-600" strokeWidth={1.75} />
+          </div>
+          <div>
+            <h1 className="text-xl font-semibold tracking-tight text-slate-900">Настройки</h1>
+            <p className="mt-1 max-w-xl text-sm text-slate-500">
+              Параметры склада, интерфейса и почтовых уведомлений
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex w-fit items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+          Склад · MED Logistics
+        </span>
+      </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Назначения списания</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-sm text-slate-600 mb-3">
-            Справочник направлений списания: больницы, отделения, утилизация и др.
-          </p>
-          <Link to="/settings/writeoff-destinations">
-            <Button variant="outline" className="text-xs font-bold">
-              <ArrowRightLeft className="w-3.5 h-3.5 mr-1.5" />
+      <Card className={settingsCardClass}>
+        <CardContent className={`${settingsCardBodyClass} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>
+          <div className="flex min-w-0 flex-1 gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-blue-50 text-blue-700">
+              <ArrowRightLeft className="h-4 w-4" strokeWidth={2} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-900">Назначения списания</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                Справочник направлений: больницы, отделения, утилизация и другие назначения при
+                расходе со склада.
+              </p>
+            </div>
+          </div>
+          <Link to="/settings/writeoff-destinations" className="shrink-0 sm:ml-4">
+            <Button variant="outline" className="h-9 gap-1.5 border-slate-200 text-sm font-medium">
               Открыть справочник
+              <ChevronRight className="h-4 w-4 text-slate-400" />
             </Button>
           </Link>
         </CardContent>
@@ -117,137 +151,133 @@ export default function Settings() {
       {import.meta.env.VITE_DISABLE_MAIL_SETTINGS !== 'true' ? (
         <MailSettingsSection />
       ) : (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
           Mail settings UI disabled (VITE_DISABLE_MAIL_SETTINGS=true) — trace test mode
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">FEFO и сроки годности</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Card className={settingsCardClass}>
+          <CardHeader className={settingsCardHeaderClass}>
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-slate-500" />
+              <CardTitle className="text-sm font-semibold text-slate-900">
+                FEFO и сроки годности
+              </CardTitle>
+            </div>
+            <CardDescription className="text-xs text-slate-500">
+              Алгоритм отбора партий и пороги предупреждений
+            </CardDescription>
+          </CardHeader>
+          <CardContent className={`${settingsCardBodyClass} space-y-4`}>
+            <SettingsToggleRow
               checked={settings.fefoEnabled}
-              onChange={(e) => update('fefoEnabled', e.target.checked)}
+              onChange={(v) => update('fefoEnabled', v)}
+              label="FEFO включён"
+              description="При списании предлагать партии по сроку годности"
             />
-            FEFO включён
-          </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">
-                Порог внимания (дней)
-              </label>
-              <input
-                type="number"
-                className="w-full h-9 px-2 text-sm border border-slate-300 rounded-lg mt-1"
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <SettingsNumberField
+                label="Порог внимания (дней)"
                 value={settings.expiryWarningDays}
-                onChange={(e) => update('expiryWarningDays', Number(e.target.value))}
+                onChange={(v) => update('expiryWarningDays', v)}
+                id="expiry-warning-days"
               />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-500 uppercase">
-                Критичный срок (дней)
-              </label>
-              <input
-                type="number"
-                className="w-full h-9 px-2 text-sm border border-slate-300 rounded-lg mt-1"
+              <SettingsNumberField
+                label="Критичный срок (дней)"
                 value={settings.expiryCriticalDays}
-                onChange={(e) => update('expiryCriticalDays', Number(e.target.value))}
+                onChange={(v) => update('expiryCriticalDays', v)}
+                id="expiry-critical-days"
               />
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Сканер</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+        <Card className={settingsCardClass}>
+          <CardHeader className={settingsCardHeaderClass}>
+            <div className="flex items-center gap-2">
+              <ScanLine className="h-4 w-4 text-slate-500" />
+              <CardTitle className="text-sm font-semibold text-slate-900">Сканер</CardTitle>
+            </div>
+            <CardDescription className="text-xs text-slate-500">
+              Поведение полей ввода штрихкода на терминале и в формах
+            </CardDescription>
+          </CardHeader>
+          <CardContent className={`${settingsCardBodyClass} space-y-3`}>
+            <SettingsToggleRow
               checked={settings.scannerSoundEnabled !== false}
-              onChange={(e) => update('scannerSoundEnabled', e.target.checked)}
+              onChange={(v) => update('scannerSoundEnabled', v)}
+              label="Звуковая обратная связь"
             />
-            Звуковая обратная связь
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
+            <SettingsToggleRow
               checked={settings.scannerAutoFocus}
-              onChange={(e) => update('scannerAutoFocus', e.target.checked)}
+              onChange={(v) => update('scannerAutoFocus', v)}
+              label="Автофокус сканера"
             />
-            Автофокус сканера
-          </label>
-          <div>
-            <label className="text-xs font-semibold text-slate-500 uppercase">Задержка (мс)</label>
-            <input
-              type="number"
-              className="w-full h-9 px-2 text-sm border border-slate-300 rounded-lg mt-1"
+            <SettingsNumberField
+              label="Задержка (мс)"
               value={settings.scannerDebounceMs}
-              onChange={(e) => update('scannerDebounceMs', Number(e.target.value))}
+              onChange={(v) => update('scannerDebounceMs', v)}
+              id="scanner-debounce"
+            />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className={settingsCardClass}>
+        <CardHeader className={settingsCardHeaderClass}>
+          <div className="flex items-center gap-2">
+            <LayoutGrid className="h-4 w-4 text-slate-500" />
+            <CardTitle className="text-sm font-semibold text-slate-900">Интерфейс</CardTitle>
+          </div>
+          <CardDescription className="text-xs text-slate-500">
+            Отображение таблиц, анимации и подсказки на панели управления
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={settingsCardBodyClass}>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SettingsToggleRow
+              checked={settings.uiCompactMode}
+              onChange={(v) => update('uiCompactMode', v)}
+              label="Компактные таблицы"
+            />
+            <SettingsToggleRow
+              checked={settings.uiAnimations !== false}
+              onChange={(v) => update('uiAnimations', v)}
+              label="Анимации интерфейса"
+            />
+            <SettingsToggleRow
+              checked={settings.uiAutoRefreshDashboard}
+              onChange={(v) => update('uiAutoRefreshDashboard', v)}
+              label="Автообновление панели"
+            />
+            <SettingsToggleRow
+              checked={settings.uiShowFefoHints}
+              onChange={(v) => update('uiShowFefoHints', v)}
+              label="Подсказки FEFO в карточке товара"
             />
           </div>
         </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Интерфейс</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={settings.uiCompactMode}
-              onChange={(e) => update('uiCompactMode', e.target.checked)}
-            />
-            Компактные таблицы
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={settings.uiAnimations !== false}
-              onChange={(e) => update('uiAnimations', e.target.checked)}
-            />
-            Анимации интерфейса
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={settings.uiAutoRefreshDashboard}
-              onChange={(e) => update('uiAutoRefreshDashboard', e.target.checked)}
-            />
-            Автообновление панели управления
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              checked={settings.uiShowFefoHints}
-              onChange={(e) => update('uiShowFefoHints', e.target.checked)}
-            />
-            Подсказки FEFO в карточке товара
-          </label>
-        </CardContent>
-        <CardFooter className="flex gap-2 border-t">
-          <Button variant="outline" onClick={handleReset} disabled={saving} className="flex-1">
+        <CardFooter className={`${settingsCardFooterClass} flex flex-col gap-2 sm:flex-row`}>
+          <Button
+            variant="outline"
+            onClick={handleReset}
+            disabled={saving}
+            className="h-9 flex-1 border-slate-200"
+          >
             Сбросить
           </Button>
           <Button
             onClick={() => void handleSave()}
             disabled={saving}
-            className="flex-1 bg-blue-700 hover:bg-blue-800 text-white"
+            className="h-9 flex-1 bg-blue-700 text-white hover:bg-blue-800"
           >
             {saving ? 'Сохранение…' : 'Сохранить склад'}
           </Button>
         </CardFooter>
       </Card>
 
-      <p className="text-xs text-slate-400 text-center font-mono">
+      <p className="text-center font-mono text-xs text-slate-400">
         Build: {formatBuildLabel(appBuildId)}
         {appBuildCommit !== 'unknown' ? ` · ${appBuildCommit}` : ''}
       </p>

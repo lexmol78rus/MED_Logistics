@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   PackageSearch,
@@ -10,19 +10,28 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { fetchDashboardSummary, type DashboardSummary } from '../lib/api/dashboard';
-import { fetchExpiry, type ExpiryListItem } from '../lib/api/expiry';
+import { fetchExpiryAll, type ExpiryListItem } from '../lib/api/expiry';
+import {
+  CRITICAL_DAYS_BADGE_CLASS,
+  ExpiryStatusBadge,
+  resolveExpiryStatusVariant,
+} from '../components/expiry/ExpiryStatusBadge';
 import { downloadExport } from '../lib/export/download';
 import { canExport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { ApiError } from '../lib/api/client';
 import { loadSettings } from '../lib/settings/storage';
 import { toast } from 'sonner';
+import { TruncatedText } from '../components/ui/TruncatedText';
+
+const CRITICAL_WIDGET_PREVIEW = 5;
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const userRole = useUserStore((s) => s.user?.role ?? null);
   const [data, setData] = useState<DashboardSummary | null>(null);
-  const [expiringLots, setExpiringLots] = useState<ExpiryListItem[]>([]);
+  const [criticalLots, setCriticalLots] = useState<ExpiryListItem[]>([]);
+  const [showAllCritical, setShowAllCritical] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -32,10 +41,11 @@ export default function Dashboard() {
     try {
       const [summary, expiry] = await Promise.all([
         fetchDashboardSummary(),
-        fetchExpiry({ filter: 'lt30', pageSize: 8 }),
+        fetchExpiryAll({ filter: 'critical' }),
       ]);
       setData(summary);
-      setExpiringLots(expiry.items);
+      setCriticalLots(expiry.items);
+      setShowAllCritical(false);
       if (showSuccessToast) {
         toast.success('Данные обновлены');
       }
@@ -71,6 +81,15 @@ export default function Dashboard() {
     }
   };
 
+  const criticalCount = data?.criticalExpiryCount ?? criticalLots.length;
+
+  const visibleCriticalLots = useMemo(() => {
+    if (showAllCritical || criticalLots.length <= CRITICAL_WIDGET_PREVIEW) {
+      return criticalLots;
+    }
+    return criticalLots.slice(0, CRITICAL_WIDGET_PREVIEW);
+  }, [criticalLots, showAllCritical]);
+
   const kpis = data
     ? [
         {
@@ -88,11 +107,11 @@ export default function Dashboard() {
           critical: false,
         },
         {
-          title: 'КРИТИЧНЫЕ СРОКИ (<30 ДН)',
-          value: String(data.criticalExpiryCount),
+          title: 'КРИТИЧНЫЕ СРОКИ',
+          value: String(criticalCount),
           icon: Timer,
-          warning: data.criticalExpiryCount > 0,
-          critical: data.criticalExpiryCount > 0,
+          warning: criticalCount > 0,
+          critical: criticalCount > 0,
         },
         {
           title: 'НИЗКИЙ ОСТАТОК',
@@ -196,7 +215,9 @@ export default function Dashboard() {
                         </div>
                         <div className="col-span-2 p-2 font-mono text-[10px] text-slate-600">{movement.id}</div>
                         <div className="col-span-2 p-2 font-mono text-[10px] text-slate-400">{movement.ref}</div>
-                        <div className="col-span-4 p-2 truncate font-medium text-slate-700">{movement.desc}</div>
+                        <div className="col-span-4 p-2 min-w-0">
+                          <TruncatedText className="font-medium text-slate-700">{movement.desc}</TruncatedText>
+                        </div>
                         <div className="col-span-2 p-2 text-right pr-4">
                           <span
                             className={`font-mono font-bold ${
@@ -217,48 +238,70 @@ export default function Dashboard() {
               <div className="p-3 border-b border-slate-200 bg-red-50/20 flex items-center justify-between">
                 <h3 className="text-xs font-bold uppercase tracking-wider text-red-700 flex items-center">
                   <Timer className="w-3.5 h-3.5 mr-1.5" />
-                  Критичные сроки
+                  Критические сроки
                 </h3>
-                <span className="text-[10px] font-bold text-red-400">{data.criticalExpiryCount} &lt; 30 ДН</span>
+                <span className="text-[10px] font-bold text-red-400">{criticalCount} поз.</span>
               </div>
               <div className="flex-1 overflow-auto p-0">
                 <div className="divide-y divide-slate-100 text-xs">
-                  {expiringLots.map((lot) => (
-                    <div
-                      key={lot.id}
-                      className="p-3 hover:bg-slate-50 flex items-center justify-between cursor-pointer"
-                      onClick={() => navigate(`/products/${lot.productId}`)}
-                    >
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium text-slate-800 truncate leading-snug">{lot.name}</p>
-                        <div className="flex items-center mt-1 text-[10px] text-slate-500 font-mono">
-                          <span>{lot.ref}</span>
-                          <span className="mx-1.5 text-slate-300">|</span>
-                          <span className="font-bold text-slate-600">{lot.lot}</span>
+                  {visibleCriticalLots.map((lot) => {
+                    const { variant } = resolveExpiryStatusVariant(lot);
+                    const daysLabel =
+                      lot.days == null ? '—' : lot.days < 0 ? `${lot.days} ДН` : `${lot.days} ДН`;
+
+                    return (
+                      <div
+                        key={lot.id}
+                        className="p-3 hover:bg-slate-50 flex items-start justify-between gap-3 cursor-pointer"
+                        onClick={() => navigate(`/products/${lot.productId}`)}
+                      >
+                        <div className="min-w-0 flex-1">
+                          <TruncatedText as="p" className="font-medium text-slate-800 leading-snug">
+                            {lot.name}
+                          </TruncatedText>
+                          <div className="flex items-center mt-1 text-[10px] text-slate-500 font-mono">
+                            <span>{lot.ref}</span>
+                            <span className="mx-1.5 text-slate-300">|</span>
+                            <span className="font-bold text-slate-600">{lot.lot}</span>
+                          </div>
+                          <div className="mt-1.5">
+                            <ExpiryStatusBadge row={lot} />
+                          </div>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <div
+                            className={`text-[11px] font-bold text-white px-1.5 py-0.5 rounded shadow-sm inline-block tracking-wider ${CRITICAL_DAYS_BADGE_CLASS[variant]}`}
+                          >
+                            {daysLabel}
+                          </div>
+                          <div className="text-[10px] text-slate-500 mt-1 font-mono">
+                            ОСТ: <span className="font-bold text-slate-700">{lot.qty}</span> шт
+                          </div>
                         </div>
                       </div>
-                      <div className="text-right ml-4">
-                        <div className="text-[11px] font-bold text-white bg-red-500 px-1.5 py-0.5 rounded shadow-sm inline-block tracking-wider">
-                          {lot.days} ДН
-                        </div>
-                        <div className="text-[10px] text-slate-500 mt-1 font-mono">
-                          ОСТ: <span className="font-bold text-slate-700">{lot.qty}</span> шт
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {expiringLots.length === 0 && (
+                    );
+                  })}
+                  {criticalLots.length === 0 && (
                     <p className="p-4 text-center text-slate-400">Нет критичных партий</p>
                   )}
                 </div>
               </div>
-              <div className="p-2 border-t border-slate-200 bg-slate-50 mt-auto">
+              <div className="p-2 border-t border-slate-200 bg-slate-50 mt-auto flex flex-col gap-2">
+                {criticalLots.length > CRITICAL_WIDGET_PREVIEW && !showAllCritical && (
+                  <Button
+                    variant="outline"
+                    className="w-full h-8 text-[10px] uppercase font-bold tracking-wider text-red-700 hover:text-red-900 border-red-200 bg-white"
+                    onClick={() => setShowAllCritical(true)}
+                  >
+                    Показать все ({criticalLots.length})
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   className="w-full h-8 text-[10px] uppercase font-bold tracking-wider text-slate-600 hover:text-slate-900 border-slate-300"
                   onClick={() => navigate('/expiry-control')}
                 >
-                  Показать все ({data.criticalExpiryCount})
+                  Контроль сроков
                 </Button>
               </div>
             </div>

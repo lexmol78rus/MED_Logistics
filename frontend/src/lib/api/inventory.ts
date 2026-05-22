@@ -27,6 +27,7 @@ export type ReceivePayload = {
   expiryDate: string;
   quantity: number;
   location?: string;
+  expectedReceiptId?: string;
 };
 
 export type WriteoffPayload = {
@@ -75,4 +76,44 @@ export function writeoffInventory(payload: WriteoffPayload) {
     '/inventory/writeoff',
     { method: 'POST', body: JSON.stringify(payload) },
   );
+}
+
+export function writeoffInventoryBatch(payload: {
+  items: WriteoffPayload[];
+}) {
+  return apiFetch<{ success: boolean; movementIds: string[] }>(
+    '/inventory/writeoff/batch',
+    { method: 'POST', body: JSON.stringify(payload) },
+  );
+}
+
+export type CorrectWriteoffLinePayload = {
+  reference: string;
+  newQuantity?: number;
+  remove?: boolean;
+};
+
+export type CorrectWriteoffAdditionPayload = {
+  productId: string;
+  lotId: string;
+  quantity: number;
+  writeOffDestinationId: string;
+  writeOffComment?: string;
+};
+
+export function correctWriteoffGroup(payload: {
+  operationGroupId?: string;
+  movementReferences?: string[];
+  editReason: string;
+  updates?: CorrectWriteoffLinePayload[];
+  additions?: CorrectWriteoffAdditionPayload[];
+}) {
+  return apiFetch<{
+    success: boolean;
+    correctionSessionId: string;
+    movementIds: string[];
+  }>('/inventory/writeoff/correct', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }

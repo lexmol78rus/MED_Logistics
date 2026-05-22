@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LotStatus, MovementType } from '@prisma/client';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ExpiryService } from '../expiry/expiry.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -11,6 +12,7 @@ export class DashboardService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly balance: InventoryBalanceService,
+    private readonly expiry: ExpiryService,
   ) {}
 
   async getSummary() {
@@ -21,6 +23,7 @@ export class DashboardService {
     const [
       inventoryRows,
       activeLots,
+      criticalExpiryCount,
       expiringSoon,
       expiring90,
       quarantineLots,
@@ -38,6 +41,7 @@ export class DashboardService {
           inventoryRows: { some: { quantity: { gt: 0 } } },
         },
       }),
+      this.expiry.countCriticalRisks(now),
       this.prisma.lot.count({
         where: {
           expiryDate: { lte: in30, gt: now },
@@ -102,7 +106,7 @@ export class DashboardService {
     return {
       productsCount: productCount,
       activeLotsCount: activeLots,
-      criticalExpiryCount: expiringSoon,
+      criticalExpiryCount,
       lowStockCount,
       inventoryTotalUnits: totalQty,
       positionsOnStock: productCount,

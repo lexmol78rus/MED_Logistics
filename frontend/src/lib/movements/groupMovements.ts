@@ -50,6 +50,20 @@ export function collectGroupFieldText(
     .join(' ');
 }
 
+/** Одно назначение списания на группу (все позиции — в одну больницу). */
+export function resolveGroupDestination(items: MovementListItem[]): string | null {
+  const seen = new Set<string>();
+  for (const item of items) {
+    const label = item.destination?.trim();
+    if (!label) continue;
+    const key = label.toLocaleLowerCase('ru-RU');
+    if (seen.has(key)) continue;
+    seen.add(key);
+    return label;
+  }
+  return null;
+}
+
 export function buildMovementGridRows(
   items: MovementListItem[],
   expandedGroups: ReadonlySet<string>,

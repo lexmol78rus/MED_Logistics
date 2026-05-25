@@ -208,6 +208,15 @@
   font-weight: 700;
 }
 
+.movement-group-detail .movement-detail-qty-merged .movement-detail-qty-total {
+  letter-spacing: -0.02em;
+}
+
+.movement-group-detail .movement-detail-qty-merged .movement-detail-qty-breakdown {
+  max-width: 11rem;
+  word-break: break-word;
+}
+
 .movement-group-detail .movement-detail-qty.movement-qty-zero,
 .movement-group-detail .movement-detail-qty.movement-qty-neutral {
   color: #475569;

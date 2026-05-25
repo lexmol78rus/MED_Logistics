@@ -49,6 +49,7 @@ import {
   buildMovementGridRows,
   collectGroupFieldText,
   isGroupMasterRow,
+  resolveGroupDestination,
   type MovementGridRow,
 } from '../lib/movements/groupMovements';
 
@@ -75,6 +76,9 @@ function movementField(
 ): string | null {
   if (!row) return null;
   if (row.rowType === 'group-master' && row.groupItems) {
+    if (field === 'destination') {
+      return resolveGroupDestination(row.groupItems);
+    }
     return collectGroupFieldText(row.groupItems, (item) => {
       const value = item[field];
       return typeof value === 'string' ? value : value ?? '';

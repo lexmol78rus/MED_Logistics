@@ -5,9 +5,13 @@ import { WriteOffDestinationBadge } from './WriteOffDestinationBadge';
 import { MovementExpiryLabel } from './MovementExpiryLabel';
 import { MovementCorrectionBadges } from './MovementCorrectionBadges';
 import { MovementItemCorrectionComment } from './MovementItemCorrectionComment';
+import { MovementMergedQtyDisplay } from './MovementMergedQtyDisplay';
 import {
+  buildGroupDetailDisplayRows,
   buildGroupDetailHeader,
+  formatMergedWriteoffQtyDisplay,
   getItemCorrectionComment,
+  getMergedDisplayCorrectionComment,
   isWriteoffGroup,
 } from '../../lib/movements/groupStats';
 import type { MovementListItem } from '../../types/api';
@@ -28,6 +32,7 @@ type Props = {
 
 export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperator }: Props) {
   const header = buildGroupDetailHeader(items);
+  const displayRows = buildGroupDetailDisplayRows(items);
   const writeoff = isWriteoffGroup(items);
   const operatorLabel = (email: string | null | undefined) =>
     formatOperator ? formatOperator(email) : (email?.trim() || 'Система');
@@ -75,8 +80,17 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
 
       <div className="movement-group-detail-list px-3 py-3">
         <ul className="space-y-2.5">
-          {items.map((item) => {
-            const correctionComment = getItemCorrectionComment(item);
+          {displayRows.map((row) => {
+            const item = row.kind === 'merged' ? row.root : row.item;
+            const correctionComment =
+              row.kind === 'merged'
+                ? getMergedDisplayCorrectionComment(row.root, row.corrections)
+                : getItemCorrectionComment(item);
+            const mergedQty =
+              row.kind === 'merged'
+                ? formatMergedWriteoffQtyDisplay(row.root, row.corrections)
+                : null;
+
             return (
             <li
               key={item.id}
@@ -96,20 +110,25 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <MovementTypeBadge type={item.type} />
-                  <span
-                    className={`movement-detail-qty font-mono text-sm font-bold tabular-nums ${movementQtyClass(item.qty)}`}
-                  >
-                    {item.qty}
-                  </span>
+                  {mergedQty ? (
+                    <MovementMergedQtyDisplay display={mergedQty} />
+                  ) : (
+                    <span
+                      className={`movement-detail-qty font-mono text-sm font-bold tabular-nums ${movementQtyClass(item.qty)}`}
+                    >
+                      {item.qty}
+                    </span>
+                  )}
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                  {item.destination ? (
-                    <WriteOffDestinationBadge destination={item.destination} />
-                  ) : (
-                    <span className="text-slate-400">—</span>
-                  )}
+                  {!header.destination &&
+                    (item.destination ? (
+                      <WriteOffDestinationBadge destination={item.destination} />
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    ))}
                   <span>{operatorLabel(item.user)}</span>
                   <span className="font-mono text-slate-400">{item.id}</span>
                 </div>

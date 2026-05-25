@@ -47,7 +47,7 @@ export class ScannerService {
     });
 
     const recordProduct = record?.product ?? record?.lot?.product;
-    if (record && recordProduct) {
+    if (record && recordProduct && !this.isAutoBarcodeStub(recordProduct.sku, trimmed)) {
       return {
         found: true,
         entityType: record.lot ? 'lot' : 'product',
@@ -103,6 +103,13 @@ export class ScannerService {
 
   private looksLikeLot(value: string): boolean {
     return /^LOT[-/]/i.test(value) || value.startsWith('LOT');
+  }
+
+  /** Карточка «BC-…» из быстрого создания без REF — не блокирует приёмку по настоящему REF. */
+  private isAutoBarcodeStub(sku: string, scannedBarcode: string): boolean {
+    const base = `BC-${scannedBarcode.replace(/[^A-Za-z0-9]/g, '').toUpperCase()}`.slice(0, 56);
+    const normalized = sku.trim().toUpperCase();
+    return normalized === base || normalized.startsWith(`${base}-`);
   }
 
   private async findLot(lotNumber: string): Promise<ScannerProcessResult | null> {

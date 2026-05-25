@@ -24,14 +24,24 @@ import {
   useWriteoffDraftStore,
 } from '../stores/writeoffDraftStore';
 import { formatExpiryRu, lotIsExpired } from '../lib/writeoff/expiry';
+import {
+  availableAfterCart,
+  cartLotReservations,
+} from '../lib/writeoff/cartReservations';
 
 function pickFefoLot(lots: WriteoffRecommendation['lots']) {
   return lots.find((l) => l.fefo === true) ?? null;
 }
 
+/** Одна цифра «0» в поле; type=number при value=0 не перерисовывается и копит «000». */
+function formatLotQtyInput(qty: number): string {
+  return qty === 0 ? '0' : String(qty);
+}
+
 function buildInitialQuantities(
   lots: WriteoffRecommendation['lots'],
   useFefo: boolean,
+  reservedByLot: Record<string, number> = {},
 ): Record<string, number> {
   const initial: Record<string, number> = {};
   for (const lot of lots) {
@@ -40,7 +50,13 @@ function buildInitialQuantities(
   if (useFefo) {
     const primary = pickFefoLot(lots);
     if (primary) {
-      initial[primary.lotId] = Math.min(1, primary.qty);
+      const available = availableAfterCart(
+        primary.qty,
+        reservedByLot[primary.lotId] ?? 0,
+      );
+      if (available > 0) {
+        initial[primary.lotId] = Math.min(1, available);
+      }
     }
   }
   return initial;
@@ -83,14 +99,51 @@ export default function WriteOff() {
     [selectedProduct, useFefoRecommendations],
   );
 
+  const lotReservations = useMemo(() => {
+    if (!selectedProduct) return {};
+    return cartLotReservations(cart, selectedProduct.productId, editingCartId);
+  }, [selectedProduct, cart, editingCartId]);
+
+  const availableTotalQty = useMemo(() => {
+    if (!selectedProduct) return 0;
+    return selectedProduct.lots.reduce(
+      (sum, lot) => sum + availableAfterCart(lot.qty, lotReservations[lot.lotId] ?? 0),
+      0,
+    );
+  }, [selectedProduct, lotReservations]);
+
+  /** Синхронизация с корзиной (в т.ч. после добавления и старого черновика в localStorage). */
+  useEffect(() => {
+    if (!selectedProduct) return;
+    const current = useWriteoffDraftStore.getState().form.quantities;
+    let changed = false;
+    const next = { ...current };
+    for (const lot of selectedProduct.lots) {
+      const max = availableAfterCart(lot.qty, lotReservations[lot.lotId] ?? 0);
+      const cur = next[lot.lotId] ?? 0;
+      const clamped = Math.min(max, Math.max(0, cur));
+      if (clamped !== cur) {
+        next[lot.lotId] = clamped;
+        changed = true;
+      }
+    }
+    if (changed) setForm({ quantities: next });
+  }, [selectedProduct, lotReservations, setForm]);
+
   const applyRecommendation = useCallback(
     (data: WriteoffRecommendation, useFefo: boolean) => {
+      const { cart: currentCart, form: currentForm } = useWriteoffDraftStore.getState();
+      const reserved = cartLotReservations(
+        currentCart,
+        data.productId,
+        currentForm.editingCartId,
+      );
       const expiredOnly =
         data.lots.length > 0 && data.lots.every((lot) => lotIsExpired(lot));
       const effectiveFefo = expiredOnly ? false : useFefo;
       setForm({
         selectedProduct: data,
-        quantities: buildInitialQuantities(data.lots, effectiveFefo),
+        quantities: buildInitialQuantities(data.lots, effectiveFefo, reserved),
         ...(expiredOnly ? { useFefoRecommendations: false } : {}),
       });
     },
@@ -126,7 +179,8 @@ export default function WriteOff() {
 
   const setLotQuantity = useCallback(
     (lotId: string, maxQty: number, raw: string) => {
-      const parsed = raw === '' ? 0 : Number(raw);
+      const digits = raw.replace(/\D/g, '');
+      const parsed = digits === '' ? 0 : Number(digits);
       const value = Number.isFinite(parsed) ? Math.min(maxQty, Math.max(0, parsed)) : 0;
       const current = useWriteoffDraftStore.getState().form.quantities;
       setForm({ quantities: { ...current, [lotId]: value } });
@@ -154,7 +208,10 @@ export default function WriteOff() {
   const expiredWriteoffSummary = useMemo(() => {
     if (!selectedProduct || !isExpiredOnlyProduct) return null;
     const expiredLots = selectedProduct.lots.filter((lot) => lotIsExpired(lot));
-    const totalQty = expiredLots.reduce((sum, lot) => sum + lot.qty, 0);
+    const totalQty = expiredLots.reduce(
+      (sum, lot) => sum + availableAfterCart(lot.qty, lotReservations[lot.lotId] ?? 0),
+      0,
+    );
     const expiryDates = expiredLots
       .map((lot) => lot.expiry)
       .filter((expiry) => expiry && expiry !== 'Н/Д')
@@ -164,7 +221,7 @@ export default function WriteOff() {
       totalQty,
       expiryLabel: earliestExpiry ? formatExpiryRu(earliestExpiry) : null,
     };
-  }, [selectedProduct, isExpiredOnlyProduct]);
+  }, [selectedProduct, isExpiredOnlyProduct, lotReservations]);
 
   const destinationReady = destinationId !== '';
 
@@ -221,11 +278,21 @@ export default function WriteOff() {
   );
 
   const resetQuantitiesOnly = useCallback(() => {
-    if (!selectedProduct) return;
+    const { cart: currentCart, form: currentForm } = useWriteoffDraftStore.getState();
+    const product = currentForm.selectedProduct;
+    if (!product) return;
+    const expiredOnly =
+      product.lots.length > 0 && product.lots.every((lot) => lotIsExpired(lot));
+    const effectiveFefo = expiredOnly ? false : currentForm.useFefoRecommendations;
+    const reserved = cartLotReservations(
+      currentCart,
+      product.productId,
+      currentForm.editingCartId,
+    );
     setForm({
-      quantities: buildInitialQuantities(selectedProduct.lots, useFefoRecommendations),
+      quantities: buildInitialQuantities(product.lots, effectiveFefo, reserved),
     });
-  }, [selectedProduct, useFefoRecommendations, setForm]);
+  }, [setForm]);
 
   const handleAddToCart = useCallback(() => {
     const snap = useWriteoffDraftStore.getState().form;
@@ -457,7 +524,7 @@ export default function WriteOff() {
                       Доступный остаток
                     </div>
                     <div className="text-xl font-bold font-mono tracking-tight text-blue-700">
-                      {selectedProduct.totalQty.toLocaleString('ru-RU')}{' '}
+                      {availableTotalQty.toLocaleString('ru-RU')}{' '}
                       <span className="text-[10px] text-slate-500 font-sans font-normal">шт</span>
                     </div>
                   </div>
@@ -615,6 +682,10 @@ export default function WriteOff() {
                       </div>
                       {selectedProduct.lots.map((lot) => {
                         const isExpired = lotIsExpired(lot);
+                        const availableQty = availableAfterCart(
+                          lot.qty,
+                          lotReservations[lot.lotId] ?? 0,
+                        );
                         const isFefoRow =
                           !isExpiredOnlyProduct &&
                           useFefoRecommendations &&
@@ -661,18 +732,18 @@ export default function WriteOff() {
                               </span>
                             </div>
                             <div className="col-span-2 text-right font-mono text-xs font-medium text-slate-600">
-                              {lot.qty}
+                              {availableQty}
                             </div>
                             <div className="col-span-3 flex justify-end">
                               <input
-                                type="number"
+                                type="text"
                                 inputMode="numeric"
-                                value={quantities[lot.lotId] ?? 0}
-                                min={0}
-                                max={lot.qty}
+                                pattern="[0-9]*"
+                                value={formatLotQtyInput(quantities[lot.lotId] ?? 0)}
                                 className="w-20 pl-2 pr-1 h-7 text-xs font-mono font-bold text-right border rounded bg-white border-slate-300 shadow-inner focus:outline-none focus:border-blue-500"
+                                onFocus={(e) => e.currentTarget.select()}
                                 onChange={(e) =>
-                                  setLotQuantity(lot.lotId, lot.qty, e.target.value)
+                                  setLotQuantity(lot.lotId, availableQty, e.target.value)
                                 }
                               />
                             </div>

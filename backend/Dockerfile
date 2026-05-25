@@ -29,7 +29,11 @@ COPY --from=deps /app/node_modules ./node_modules
 RUN npm prune --omit=dev \
   && npm cache clean --force
 COPY --from=build /app/dist ./dist
-RUN chown -R node:node /app
-USER node
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chown -R node:node /app \
+  && chmod +x /usr/local/bin/docker-entrypoint.sh \
+  && mkdir -p /app/uploads \
+  && chown -R node:node /app/uploads
 EXPOSE 3000
-CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
+CMD ["npx prisma migrate deploy && node dist/main.js"]

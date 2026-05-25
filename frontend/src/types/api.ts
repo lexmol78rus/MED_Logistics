@@ -5,6 +5,14 @@ export type PaginatedResponse<T> = {
   pageSize: number;
 };
 
+export type ProductLotSummary = {
+  lot: string;
+  qty: number;
+  expiryDate: string | null;
+  status: string;
+  location?: string | null;
+};
+
 export type ProductListItem = {
   id: string;
   status: string;
@@ -14,8 +22,10 @@ export type ProductListItem = {
   manufacturer: string | null;
   qty: number;
   lots: number;
+  lotItems?: ProductLotSummary[];
   nearestExpiry: string;
   barcode: string | null;
+  location?: string | null;
 };
 
 export type ProductDetail = ProductListItem & {
@@ -45,6 +55,7 @@ export type MovementCorrectionMeta = {
 
 export type MovementListItem = {
   id: string;
+  productId: string;
   date: string;
   type: string;
   destination: string | null;

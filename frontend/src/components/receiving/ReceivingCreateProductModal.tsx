@@ -72,7 +72,7 @@ export default function ReceivingCreateProductModal({
       if (result.created) {
         toast.success(minimal ? 'Минимальная карточка создана' : 'Товар создан');
       } else {
-        toast.info('Товар с этим штрихкодом уже есть — продолжаем приёмку');
+        toast.info('Товар уже в базе — продолжаем приёмку (укажите LOT / партию)');
       }
       onCreated(result);
       onClose();

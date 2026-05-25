@@ -9,18 +9,29 @@ import { ProductsQueryDto } from './dto/products-query.dto';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import {
+  computeLotUiStatus,
   computeProductStatus,
   formatNearestExpiry,
   resolveNearestAvailableExpiry,
   resolvePrimaryLotNumber,
+  sortLotsFefo,
   type ProductLotContext,
 } from '../../common/utils/inventory-status.util';
+import { resolveProductIdFromBarcode } from '../../common/barcode-lookup';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
 import { ExpectedReceiptsService } from '../expected-receipts/expected-receipts.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+
+export type ProductLotSummary = {
+  lot: string;
+  qty: number;
+  expiryDate: string | null;
+  status: string;
+  location: string | null;
+};
 
 export type ProductListItem = {
   id: string;
@@ -32,8 +43,10 @@ export type ProductListItem = {
   qty: number;
   availableQty: number;
   lots: number;
+  lotItems: ProductLotSummary[];
   nearestExpiry: string;
   barcode: string | null;
+  location: string | null;
   minStock: number | null;
   reorderPoint: number | null;
   lowStock: boolean;
@@ -99,7 +112,7 @@ export class ProductsService {
             status: true,
             inventoryRows: {
               where: { quantity: { gt: 0 } },
-              select: { quantity: true, reservedQuantity: true },
+              select: { quantity: true, reservedQuantity: true, location: true },
             },
           },
         },
@@ -135,7 +148,7 @@ export class ProductsService {
             status: true,
             inventoryRows: {
               where: { quantity: { gt: 0 } },
-              select: { quantity: true, reservedQuantity: true },
+              select: { quantity: true, reservedQuantity: true, location: true },
             },
           },
         },
@@ -179,7 +192,7 @@ export class ProductsService {
             status: true,
             inventoryRows: {
               where: { quantity: { gt: 0 } },
-              select: { quantity: true, reservedQuantity: true },
+              select: { quantity: true, reservedQuantity: true, location: true },
             },
           },
         },
@@ -204,33 +217,30 @@ export class ProductsService {
     const barcode = dto.barcode.trim();
     const name = dto.name.trim();
 
-    const existingBarcode = await this.prisma.barcodeRecord.findUnique({
-      where: { barcode },
-      include: {
-        product: {
-          include: {
-            barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-            lots: {
-              select: {
-                id: true,
-                lotNumber: true,
-                expiryDate: true,
-                status: true,
-                inventoryRows: {
-                  where: { quantity: { gt: 0 } },
-                  select: { quantity: true, reservedQuantity: true },
-                },
-              },
-            },
-            inventoryRows: { select: { quantity: true } },
-          },
-        },
-      },
-    });
-
-    if (existingBarcode?.product) {
-      const item = await this.toListItem(existingBarcode.product);
+    // REF — главный идентификатор: один товар, много штрихкодов и партий LOT.
+    const existingByRef = await this.findProductByRefForQuickCreate(dto.sku);
+    if (existingByRef) {
+      await this.linkBarcodeToProduct(barcode, existingByRef.id, { allowReassign: true });
+      this.logger.log(
+        `quick-create reuse by ref sku=${existingByRef.sku} barcode=${barcode}`,
+      );
+      const item = await this.toListItem(existingByRef);
       return { ...item, category: null, storageCond: null, created: false };
+    }
+
+    const productIdFromBarcode = await resolveProductIdFromBarcode(
+      (args) => this.prisma.barcodeRecord.findFirst(args),
+      barcode,
+    );
+    if (productIdFromBarcode) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: productIdFromBarcode },
+        include: this.productQuickCreateInclude(),
+      });
+      if (product) {
+        const item = await this.toListItem(product);
+        return { ...item, category: null, storageCond: null, created: false };
+      }
     }
 
     const sku = await this.resolveQuickCreateSku(dto.sku, barcode);
@@ -253,7 +263,7 @@ export class ProductsService {
             status: true,
             inventoryRows: {
               where: { quantity: { gt: 0 } },
-              select: { quantity: true, reservedQuantity: true },
+              select: { quantity: true, reservedQuantity: true, location: true },
             },
           },
         },
@@ -272,6 +282,77 @@ export class ProductsService {
 
     const created = await this.toListItem(product);
     return { ...created, category: null, storageCond: null, created: true };
+  }
+
+  private productQuickCreateInclude() {
+    return {
+      barcodes: { take: 1, orderBy: { createdAt: 'asc' as const } },
+      lots: {
+        select: {
+          id: true,
+          lotNumber: true,
+          expiryDate: true,
+          status: true,
+          inventoryRows: {
+            where: { quantity: { gt: 0 } },
+            select: { quantity: true, reservedQuantity: true, location: true },
+          },
+        },
+      },
+      inventoryRows: { select: { quantity: true } },
+    };
+  }
+
+  private async findProductByRefForQuickCreate(skuInput: string | undefined) {
+    const trimmed = skuInput?.trim();
+    if (!trimmed) return null;
+
+    const sku = trimmed.toUpperCase();
+    return this.prisma.product.findFirst({
+      where: {
+        OR: [
+          { sku: { equals: sku, mode: 'insensitive' } },
+          { sku: { equals: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      include: this.productQuickCreateInclude(),
+    });
+  }
+
+  private async linkBarcodeToProduct(
+    barcode: string,
+    productId: string,
+    options?: { allowReassign?: boolean },
+  ): Promise<void> {
+    const productIdFromBarcode = await resolveProductIdFromBarcode(
+      (args) => this.prisma.barcodeRecord.findFirst(args),
+      barcode,
+    );
+
+    if (!productIdFromBarcode) {
+      await this.prisma.barcodeRecord.create({ data: { barcode: barcode.trim(), productId } });
+      return;
+    }
+
+    if (productIdFromBarcode === productId) {
+      return;
+    }
+
+    if (options?.allowReassign) {
+      const record = await this.prisma.barcodeRecord.findFirst({
+        where: { OR: [{ barcode }, { barcode: { equals: barcode, mode: 'insensitive' } }] },
+        select: { id: true, barcode: true },
+      });
+      if (record) {
+        await this.prisma.barcodeRecord.update({
+          where: { id: record.id },
+          data: { productId, lotId: null },
+        });
+      }
+      return;
+    }
+
+    throw new ConflictException('Штрихкод уже используется');
   }
 
   private async resolveQuickCreateSku(skuInput: string | undefined, barcode: string): Promise<string> {
@@ -296,6 +377,17 @@ export class ProductsService {
     const existing = await this.prisma.product.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Товар не найден');
 
+    let newSku: string | undefined;
+    if (dto.sku?.trim()) {
+      newSku = dto.sku.trim().toUpperCase();
+      if (newSku !== existing.sku) {
+        const skuTaken = await this.prisma.product.findUnique({ where: { sku: newSku } });
+        if (skuTaken) throw new ConflictException('Артикул уже существует');
+      } else {
+        newSku = undefined;
+      }
+    }
+
     if (dto.barcode?.trim()) {
       const barcodeTaken = await this.prisma.barcodeRecord.findFirst({
         where: { barcode: dto.barcode.trim(), NOT: { productId: id } },
@@ -307,6 +399,7 @@ export class ProductsService {
       await tx.product.update({
         where: { id },
         data: {
+          sku: newSku,
           name: dto.name?.trim(),
           manufacturer:
             dto.manufacturer !== undefined ? dto.manufacturer?.trim() || null : undefined,
@@ -345,12 +438,31 @@ export class ProductsService {
           action: 'product.update',
           entityType: 'product',
           entityId: id,
-          metadata: { sku: existing.sku, changes: JSON.parse(JSON.stringify(dto)) },
+          metadata: {
+            sku: existing.sku,
+            ...(newSku ? { newSku } : {}),
+            changes: JSON.parse(JSON.stringify(dto)),
+          },
         },
       });
     });
 
     return this.getById(id);
+  }
+
+  private resolveWarehouseLocation(
+    rows: { location: string | null }[],
+  ): string | null {
+    const unique = [
+      ...new Set(
+        rows
+          .map((row) => row.location?.trim())
+          .filter((value): value is string => Boolean(value)),
+      ),
+    ];
+    if (unique.length === 0) return null;
+    if (unique.length === 1) return unique[0];
+    return unique.join(', ');
   }
 
   private async toListItem(
@@ -366,7 +478,11 @@ export class ProductsService {
         lotNumber: string;
         expiryDate: Date | null;
         status: LotStatus;
-        inventoryRows: { quantity: Prisma.Decimal; reservedQuantity: Prisma.Decimal | null }[];
+        inventoryRows: {
+          quantity: Prisma.Decimal;
+          reservedQuantity: Prisma.Decimal | null;
+          location: string | null;
+        }[];
       }[];
       inventoryRows: { quantity: Prisma.Decimal }[];
     },
@@ -389,8 +505,25 @@ export class ProductsService {
         0,
       ),
     }));
+    const sortedLots = sortLotsFefo(lotContexts);
     const nearestExpiry = resolveNearestAvailableExpiry(lotContexts);
     const primaryLot = resolvePrimaryLotNumber(lotContexts);
+    const lotByNumber = new Map(product.lots.map((l) => [l.lotNumber, l]));
+    const lotItems: ProductLotSummary[] = sortedLots.map((ctx) => {
+      const source = lotByNumber.get(ctx.lotNumber);
+      return {
+        lot: ctx.lotNumber,
+        qty: ctx.totalQty,
+        expiryDate: ctx.expiryDate?.toISOString().slice(0, 10) ?? null,
+        status: computeLotUiStatus(ctx.status, ctx.expiryDate, ctx.totalQty),
+        location: source
+          ? this.resolveWarehouseLocation(source.inventoryRows)
+          : null,
+      };
+    });
+    const location = this.resolveWarehouseLocation(
+      product.lots.flatMap((lot) => lot.inventoryRows),
+    );
     const minStock = product.minStock != null ? decimalToNumber(product.minStock) : null;
     const reorderPoint =
       product.reorderPoint != null ? decimalToNumber(product.reorderPoint) : null;
@@ -410,8 +543,10 @@ export class ProductsService {
       qty,
       availableQty: bal.availableQuantity,
       lots: product.lots.length,
+      lotItems,
       nearestExpiry: formatNearestExpiry(nearestExpiry),
       barcode: product.barcodes[0]?.barcode ?? null,
+      location,
       minStock,
       reorderPoint,
       lowStock,

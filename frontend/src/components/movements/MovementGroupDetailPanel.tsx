@@ -1,5 +1,6 @@
 import { Package, Pencil } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { MovementRuButton } from './MovementRuButton';
 import { MovementTypeBadge } from './MovementTypeBadge';
 import { WriteOffDestinationBadge } from './WriteOffDestinationBadge';
 import { MovementExpiryLabel } from './MovementExpiryLabel';
@@ -108,7 +109,9 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
                     </span>
                   </div>
                 </div>
-                <div className="flex shrink-0 flex-col items-end gap-1">
+                <div className="flex shrink-0 items-start gap-1.5">
+                  <MovementRuButton productId={item.productId} />
+                  <div className="flex flex-col items-end gap-1">
                   <MovementTypeBadge type={item.type} />
                   {mergedQty ? (
                     <MovementMergedQtyDisplay display={mergedQty} />
@@ -119,6 +122,7 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
                       {item.qty}
                     </span>
                   )}
+                  </div>
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[10px] text-slate-500">

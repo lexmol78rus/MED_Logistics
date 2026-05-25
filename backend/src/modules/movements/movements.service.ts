@@ -15,6 +15,7 @@ export type MovementCorrectionMeta = {
 
 export type MovementListItem = {
   id: string;
+  productId: string;
   date: string;
   type: string;
   destination: string | null;
@@ -195,6 +196,7 @@ export class MovementsService {
 
       return {
         id: m.reference,
+        productId: m.productId,
         date: formatMovementDate(m.createdAt),
         type: typeLabel,
         destination: destinationLabel,

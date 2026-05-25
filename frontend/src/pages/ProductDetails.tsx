@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Box, QrCode, Factory, Activity, Edit, AlertTriangle } from 'lucide-react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, Box, QrCode, Factory, Edit, AlertTriangle } from 'lucide-react';
 import ProductExpectedReceiptsTab from '../components/products/ProductExpectedReceiptsTab';
+import ProductLocationTab from '../components/products/ProductLocationTab';
+import ProductMovementsTab from '../components/products/ProductMovementsTab';
+import ProductRuTab from '../components/products/ProductRuTab';
 import { Button } from '@/components/ui/button';
 import { AgGridReact } from 'ag-grid-react';
 import { ColDef, ICellRendererParams } from 'ag-grid-community';
@@ -43,22 +46,32 @@ const TABS = [
   { id: 'lots', label: 'Партии' },
   { id: 'movements', label: 'Движения' },
   { id: 'expiry', label: 'Сроки' },
-  { id: 'writeoff', label: 'Списания' },
-  { id: 'ordered', label: 'Заказано' },
+  { id: 'ru', label: 'РУ' },
+  { id: 'location', label: 'Адрес ячейки' },
+  { id: 'ordered', label: 'Предзаказ' },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
 
+function isProductTabId(value: string | null): value is TabId {
+  return value != null && TABS.some((t) => t.id === value);
+}
+
+function resolveProductTabFromUrl(value: string | null): TabId {
+  if (value === 'writeoff') return 'movements';
+  return isProductTabId(value) ? value : 'overview';
+}
+
 export default function ProductDetails() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const userRole = useUserStore((s) => s.user?.role ?? null);
-  const [tab, setTab] = useState<TabId>('overview');
+  const [tab, setTab] = useState<TabId>(() => resolveProductTabFromUrl(searchParams.get('tab')));
   const [product, setProduct] = useState<ProductDetail | null>(null);
   const [lotsRaw, setLotsRaw] = useState<LotListItem[]>([]);
   const [lotsData, setLotsData] = useState<LotRow[]>([]);
   const [movementData, setMovementData] = useState<MovementListItem[]>([]);
-  const [writeoffData, setWriteoffData] = useState<MovementListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
 
@@ -84,7 +97,6 @@ export default function ProductDetails() {
         })),
       );
       setMovementData(movementsRes.items);
-      setWriteoffData(movementsRes.items.filter((m) => m.type === 'РАСХОД'));
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Не удалось загрузить карточку');
       navigate('/products');
@@ -96,6 +108,13 @@ export default function ProductDetails() {
   useEffect(() => {
     void loadProductCard();
   }, [loadProductCard]);
+
+  useEffect(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl != null && (isProductTabId(fromUrl) || fromUrl === 'writeoff')) {
+      setTab(resolveProductTabFromUrl(fromUrl));
+    }
+  }, [searchParams]);
 
   const blockedCount = lotsRaw.filter((l) => l.status === 'БЛОК').length;
   const quarantineCount = lotsRaw.filter((l) => l.status === 'КАРАНТИН').length;
@@ -111,7 +130,7 @@ export default function ProductDetails() {
         cellClass: 'font-mono text-[11px] font-bold text-slate-700',
       }, SHOW_WAREHOUSE_LOCATIONS ? 1 : 3),
       ...(SHOW_WAREHOUSE_LOCATIONS
-        ? [flexTextColumnDef({ field: 'lotArea' as const, headerName: 'ЯЧЕЙКА / ЛОКАЦИЯ', minWidth: 120, cellClass: 'text-xs' }, 2)]
+        ? [flexTextColumnDef({ field: 'lotArea' as const, headerName: 'АДРЕС ЯЧЕЙКИ', minWidth: 120, cellClass: 'text-xs' }, 2)]
         : []),
       stockQtyColumnDef('qty'),
       compactColumnDef({
@@ -282,20 +301,8 @@ export default function ProductDetails() {
         </div>
       )}
 
-      {tab === 'movements' && (
-        <div className="bg-white border border-slate-300 rounded shadow-sm p-4">
-          <Activity className="w-4 h-4 inline mr-2 text-blue-600" />
-          <span className="text-xs font-bold uppercase text-slate-700">Все движения</span>
-          <div className="mt-4 space-y-3">
-            {movementData.map((mv) => (
-              <div key={mv.id} className="flex justify-between border-b border-slate-100 pb-2 text-xs">
-                <span className="font-bold">{mv.type}</span>
-                <span className="font-mono">{mv.qty}</span>
-                <span className="text-slate-400">{mv.date}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+      {tab === 'movements' && id && (
+        <ProductMovementsTab productId={id} items={movementData} />
       )}
 
       {tab === 'expiry' && (
@@ -328,21 +335,14 @@ export default function ProductDetails() {
         </div>
       )}
 
-      {tab === 'writeoff' && (
-        <div className="bg-white border border-slate-300 rounded p-4">
-          {writeoffData.length === 0 ? (
-            <p className="text-xs text-slate-400">Списаний нет</p>
-          ) : (
-            writeoffData.map((mv) => (
-              <div key={mv.id} className="flex justify-between border-b border-slate-100 py-2 text-xs">
-                <span className="font-mono">{mv.id}</span>
-                <span className="font-bold text-red-600">{mv.qty}</span>
-                <span>{mv.lot ?? '—'}</span>
-                <span className="text-slate-400">{mv.date}</span>
-              </div>
-            ))
-          )}
-        </div>
+      {tab === 'ru' && id && <ProductRuTab productId={id} userRole={userRole} />}
+
+      {tab === 'location' && id && SHOW_WAREHOUSE_LOCATIONS && (
+        <ProductLocationTab
+          productId={id}
+          userRole={userRole}
+          onSaved={loadProductCard}
+        />
       )}
 
       {tab === 'ordered' && id && (

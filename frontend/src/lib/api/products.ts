@@ -19,6 +19,7 @@ export type CreateProductPayload = {
 };
 
 export type UpdateProductPayload = {
+  sku?: string;
   name?: string;
   manufacturer?: string;
   barcode?: string;

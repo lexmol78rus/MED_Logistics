@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AgGridReact } from 'ag-grid-react';
-import { ColDef } from 'ag-grid-community';
+import { ColDef, ICellRendererParams, RowClickedEvent } from 'ag-grid-community';
 import {
   COMPACT_GRID_HEADER_HEIGHT,
   COMPACT_GRID_ROW_HEIGHT,
@@ -32,15 +32,38 @@ import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { canCreateProduct, canEditProduct, canExport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { ProductStatusBadge } from '../components/products/ProductStatusBadge';
+import { MovementGroupExpandIcon } from '../components/movements/MovementGroupExpandIcon';
+import { ProductGroupMasterCell } from '../components/products/ProductGroupMasterCell';
+import { ProductLotGroupDetailRenderer } from '../components/products/ProductLotGroupDetailRenderer';
+import {
+  buildProductGridRows,
+  isProductGroupMasterRow,
+  type ProductGridRow,
+} from '../lib/products/groupProducts';
+import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
+
+function productField(
+  row: ProductGridRow | undefined,
+  field: keyof ProductListItem,
+): string | number | null {
+  if (!row) return null;
+  if (isProductGroupMasterRow(row) && (field === 'lot' || field === 'nearestExpiry')) {
+    return null;
+  }
+  const value = row.product[field];
+  if (typeof value === 'string' || typeof value === 'number') return value;
+  return value ?? null;
+}
 
 export default function Products() {
   const userRole = useUserStore((s) => s.user?.role ?? null);
   const navigate = useNavigate();
-  const gridRef = useRef<AgGridReact<ProductListItem>>(null);
+  const gridRef = useRef<AgGridReact<ProductGridRow>>(null);
   const rowNavigateTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [rowData, setRowData] = useState<ProductListItem[]>([]);
+  const [items, setItems] = useState<ProductListItem[]>([]);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set());
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -56,6 +79,20 @@ export default function Products() {
     hasExpiry: undefined as boolean | undefined,
     status: '',
   });
+
+  const gridRows = useMemo(
+    () => buildProductGridRows(items, expandedGroups),
+    [items, expandedGroups],
+  );
+
+  useEffect(() => {
+    const api = gridRef.current?.api;
+    if (!api) return;
+    const raf = requestAnimationFrame(() => {
+      api.onRowHeightChanged();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [gridRows, expandedGroups]);
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchText), 300);
@@ -74,12 +111,13 @@ export default function Products() {
         hasExpiry: appliedFilters.hasExpiry,
         status: appliedFilters.status || undefined,
       });
-      setRowData(data.items);
+      setItems(data.items);
+      setExpandedGroups(new Set());
       setTotal(data.total);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Не удалось загрузить товары';
       toast.error(message);
-      setRowData([]);
+      setItems([]);
       setTotal(0);
     } finally {
       setLoading(false);
@@ -90,63 +128,178 @@ export default function Products() {
     void loadProducts();
   }, [loadProducts]);
 
-  const columnDefs = useMemo<ColDef<ProductListItem>[]>(() => [
+  const toggleGroup = useCallback((groupKey: string) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(groupKey)) next.delete(groupKey);
+      else next.add(groupKey);
+      return next;
+    });
+  }, []);
+
+  const openProductCard = useCallback(
+    (productId: string) => {
+      if (rowNavigateTimer.current) {
+        clearTimeout(rowNavigateTimer.current);
+        rowNavigateTimer.current = null;
+      }
+      navigate(`/products/${productId}`);
+    },
+    [navigate],
+  );
+
+  const onRowClicked = useCallback(
+    (event: RowClickedEvent<ProductGridRow>) => {
+      const row = event.data;
+      if (!row) return;
+
+      if (isProductGroupMasterRow(row) && row.groupKey) {
+        if (rowNavigateTimer.current) {
+          clearTimeout(rowNavigateTimer.current);
+          rowNavigateTimer.current = null;
+        }
+        toggleGroup(row.groupKey);
+        return;
+      }
+
+      if (row.rowType === 'group-detail') {
+        const target = event.event?.target;
+        if (
+          target instanceof Element &&
+          target.closest('.movement-group-detail-card-actionable') &&
+          row.product?.id
+        ) {
+          openProductCard(row.product.id);
+        }
+        return;
+      }
+
+      if (rowNavigateTimer.current) clearTimeout(rowNavigateTimer.current);
+      rowNavigateTimer.current = setTimeout(() => {
+        openProductCard(row.product.id);
+      }, 250);
+    },
+    [openProductCard, toggleGroup],
+  );
+
+  const columnDefs = useMemo<ColDef<ProductGridRow>[]>(() => [
+    compactColumnDef({
+      colId: 'expand',
+      headerName: '',
+      width: 36,
+      minWidth: 36,
+      maxWidth: 36,
+      flex: 0,
+      sortable: false,
+      filter: false,
+      resizable: false,
+      cellClass: 'movement-group-expand-cell',
+      cellRenderer: (params: ICellRendererParams<ProductGridRow>) => {
+        if (!isProductGroupMasterRow(params.data)) return null;
+        const expanded = expandedGroups.has(params.data!.groupKey!);
+        return <MovementGroupExpandIcon expanded={expanded} />;
+      },
+    }),
     centeredColumnDef(
       badgeColumnDef({
-        field: 'status',
+        field: 'product.status',
         headerName: 'СТАТУС',
         minWidth: 88,
         maxWidth: 104,
         flex: 0.5,
         filter: false,
+        valueGetter: (p) => p.data?.product.status,
         cellClass: 'ag-cell-status-indicator',
         tooltipValueGetter: () => null,
-        cellRenderer: (params) => (
-          <ProductStatusBadge status={String(params.value ?? '')} />
+        cellRenderer: (params: ICellRendererParams<ProductGridRow>) => (
+          <ProductStatusBadge status={String(params.data?.product.status ?? '')} />
         ),
       }),
     ),
+    ...(SHOW_WAREHOUSE_LOCATIONS
+      ? [
+          flexTextColumnDef({
+            field: 'product.location',
+            headerName: 'АДРЕС ЯЧЕЙКИ',
+            minWidth: 110,
+            maxWidth: 150,
+            flex: 0.85,
+            valueGetter: (p) => p.data?.product.location,
+            valueFormatter: (p) => (p.value as string | null | undefined) ?? '—',
+            cellClass: 'font-mono text-xs text-slate-600',
+          }),
+        ]
+      : []),
     refColumnDef({
-      field: 'ref',
+      field: 'product.ref',
       headerName: 'REF',
       minWidth: 170,
+      valueGetter: (p) => p.data?.product.ref,
       cellClass: 'font-mono text-xs font-bold text-slate-600',
     }),
     flexTextColumnDef({
-      field: 'lot',
+      field: 'product.lot',
       headerName: 'LOT',
       minWidth: 100,
+      valueGetter: (p) => productField(p.data, 'lot'),
       cellClass: 'font-mono text-xs font-bold text-slate-600',
-      valueFormatter: (p) => (p.value as string | null) ?? '',
+      valueFormatter: (p) => {
+        if (isProductGroupMasterRow(p.data)) return '—';
+        return (p.value as string | null) ?? '';
+      },
+      cellRenderer: (params: ICellRendererParams<ProductGridRow>) => {
+        if (isProductGroupMasterRow(params.data)) {
+          return <ProductGroupMasterCell row={params.data} />;
+        }
+        return params.value;
+      },
     }, GRID_FLEX_DEFAULT),
     primaryTextColumnDef({
-      field: 'name',
+      field: 'product.name',
       headerName: 'НОМЕНКЛАТУРА',
       minWidth: 260,
+      valueGetter: (p) => p.data?.product.name,
       cellClass: 'font-medium text-slate-800',
     }),
     flexTextColumnDef({
-      field: 'manufacturer',
+      field: 'product.manufacturer',
       headerName: 'ИЗГОТОВИТЕЛЬ',
       minWidth: 160,
+      valueGetter: (p) => p.data?.product.manufacturer,
       cellClass: 'text-slate-600 text-xs',
     }, GRID_FLEX_WIDE),
-    stockQtyColumnDef('qty'),
+    stockQtyColumnDef('product.qty', {
+      valueGetter: (p) => p.data?.product.qty,
+      valueFormatter: (p) => {
+        if (isProductGroupMasterRow(p.data)) {
+          return String(p.data?.product.qty ?? '');
+        }
+        return String(p.value ?? '');
+      },
+      cellClassRules: {
+        'movement-group-qty-summary': (p) => isProductGroupMasterRow(p.data),
+      },
+    }),
     compactColumnDef({
-      field: 'nearestExpiry',
+      field: 'product.nearestExpiry',
       headerName: 'БЛИЖАЙШИЙ СРОК',
       minWidth: 136,
       maxWidth: 160,
       flex: 0.95,
+      valueGetter: (p) => productField(p.data, 'nearestExpiry'),
       cellClass: 'ag-cell-nearest-expiry font-mono text-xs',
       valueFormatter: (p) => {
+        if (isProductGroupMasterRow(p.data)) return '—';
         const v = p.value as string | null | undefined;
         if (!v || v === 'Н/Д') return '—';
         return v;
       },
       cellClassRules: {
-        'text-slate-400 font-normal': (params) => params.value === 'Н/Д' || !params.value,
+        'text-slate-400 font-normal': (params) =>
+          !isProductGroupMasterRow(params.data) &&
+          (params.value === 'Н/Д' || !params.value),
         'text-red-600 font-bold bg-red-50': (params) => {
+          if (isProductGroupMasterRow(params.data)) return false;
           if (params.value === 'Н/Д' || !params.value) return false;
           const diff = new Date(params.value as string).getTime() - Date.now();
           return diff < 30 * 24 * 60 * 60 * 1000;
@@ -154,14 +307,39 @@ export default function Products() {
       },
     }),
     flexTextColumnDef({
-      field: 'barcode',
+      field: 'product.barcode',
       headerName: 'ШТРИХКОД',
       minWidth: 110,
+      valueGetter: (p) => p.data?.product.barcode,
       cellClass: 'font-mono text-[10px] text-slate-400',
     }, GRID_FLEX_DEFAULT),
-  ], []);
+  ], [expandedGroups]);
 
-  const defaultColDef = useMemo(() => createDefaultColDef(), []);
+  const defaultColDef = useMemo(() => createDefaultColDef({ wrapText: false, autoHeight: false }), []);
+
+  const getRowClass = useCallback(
+    (params: { data?: ProductGridRow }) => {
+      if (params.data?.rowType === 'group-master') {
+        const classes = ['movement-group-master-row'];
+        if (params.data.groupKey && expandedGroups.has(params.data.groupKey)) {
+          classes.push('movement-group-master-expanded');
+        }
+        return classes.join(' ');
+      }
+      if (params.data?.rowType === 'group-detail') {
+        return 'movement-group-detail-row movement-group-detail-active';
+      }
+      return undefined;
+    },
+    [expandedGroups],
+  );
+
+  const getRowHeight = useCallback((params: { data?: ProductGridRow }) => {
+    if (params.data?.rowType === 'group-detail') {
+      return undefined;
+    }
+    return COMPACT_GRID_ROW_HEIGHT;
+  }, []);
 
   const openCreate = () => {
     setEditing(null);
@@ -306,39 +484,41 @@ export default function Products() {
               Загрузка...
             </div>
           )}
-          <div className={`${listGridClassName} absolute inset-0`} style={compactGridThemeStyle}>
+          <div className={`${listGridClassName} products-grid absolute inset-0`} style={compactGridThemeStyle}>
             <AgGridReact
               {...sharedGridOptions}
               theme="legacy"
               ref={gridRef}
-              rowData={rowData}
+              rowData={gridRows}
               columnDefs={columnDefs}
               defaultColDef={defaultColDef}
               rowSelection="single"
-              onRowClicked={(e) => {
-                if (!e.data) return;
-                if (rowNavigateTimer.current) clearTimeout(rowNavigateTimer.current);
-                rowNavigateTimer.current = setTimeout(() => {
-                  navigate(`/products/${e.data!.id}`);
-                }, 250);
-              }}
+              onRowClicked={onRowClicked}
               onRowDoubleClicked={(e) => {
                 if (!canEditProduct(userRole)) return;
                 if (rowNavigateTimer.current) {
                   clearTimeout(rowNavigateTimer.current);
                   rowNavigateTimer.current = null;
                 }
-                if (e.data) openEdit(e.data);
+                const row = e.data;
+                if (!row || row.rowType === 'group-detail') return;
+                openEdit(row.product);
               }}
               rowHeight={COMPACT_GRID_ROW_HEIGHT}
+              getRowHeight={getRowHeight}
               headerHeight={COMPACT_GRID_HEADER_HEIGHT}
+              getRowId={(p) => p.data.rowId}
+              getRowClass={getRowClass}
+              isFullWidthRow={(p) => p.rowNode.data?.rowType === 'group-detail'}
+              fullWidthCellRenderer={ProductLotGroupDetailRenderer}
+              embedFullWidthRows={false}
             />
           </div>
         </div>
 
         <div className="shrink-0 px-3 py-2 border-t border-slate-200 bg-slate-50 text-xs text-slate-600">
           <span>
-            Показано {rowData.length} из {total}
+            Показано {items.length} из {total}
             {total > MAX_PAGE_SIZE ? ` (загружено до ${MAX_PAGE_SIZE})` : ''}
           </span>
         </div>

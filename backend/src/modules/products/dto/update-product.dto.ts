@@ -4,6 +4,12 @@ export class UpdateProductDto {
   @IsOptional()
   @IsString()
   @MinLength(1)
+  @MaxLength(64)
+  sku?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
   @MaxLength(255)
   name?: string;
 

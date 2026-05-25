@@ -28,3 +28,13 @@ export function updateLotStatus(id: string, payload: LotStatusPayload) {
     body: JSON.stringify(payload),
   });
 }
+
+export function updateLotLocation(
+  id: string,
+  payload: { location?: string | null },
+) {
+  return apiFetch<LotListItem>(`/lots/${id}/location`, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}

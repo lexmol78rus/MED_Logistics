@@ -1,10 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { LotStatus, MovementType, Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LotsQueryDto } from './dto/lots-query.dto';
+import { UpdateLotLocationDto } from './dto/update-lot-location.dto';
 import { UpdateLotStatusDto } from './dto/update-lot-status.dto';
 
 export type LotListItem = {
@@ -187,6 +188,76 @@ export class LotsService {
       expiryDate: updated.expiryDate?.toISOString().slice(0, 10) ?? null,
       qty,
       location,
+      status: computeLotUiStatus(updated.status, updated.expiryDate, qty),
+      fefoRank: 0,
+    };
+  }
+
+  async updateLocation(
+    id: string,
+    dto: UpdateLotLocationDto,
+    actorEmail?: string,
+  ): Promise<LotListItem> {
+    const location = dto.location?.trim() || null;
+
+    const lot = await this.prisma.lot.findUnique({
+      where: { id },
+      include: {
+        product: { select: { sku: true, name: true } },
+        inventoryRows: { select: { quantity: true, location: true } },
+      },
+    });
+    if (!lot) throw new NotFoundException('Партия не найдена');
+    if (lot.inventoryRows.length === 0) {
+      throw new BadRequestException(
+        'Нет складских записей по партии — задайте ячейку при приёмке',
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      await tx.inventoryItem.updateMany({
+        where: { lotId: id },
+        data: { location },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: 'lot.location.update',
+          entityType: 'lot',
+          entityId: id,
+          metadata: {
+            lotNumber: lot.lotNumber,
+            productId: lot.productId,
+            location,
+          },
+        },
+      });
+
+      return tx.lot.findUniqueOrThrow({
+        where: { id },
+        include: {
+          product: { select: { id: true, sku: true, name: true } },
+          inventoryRows: { select: { quantity: true, location: true } },
+        },
+      });
+    });
+
+    const qty = updated.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.quantity),
+      0,
+    );
+    const resolvedLocation =
+      updated.inventoryRows.find((r) => r.location)?.location ?? null;
+
+    return {
+      id: updated.id,
+      productId: updated.productId,
+      productName: updated.product.name,
+      ref: updated.product.sku,
+      lot: updated.lotNumber,
+      expiryDate: updated.expiryDate?.toISOString().slice(0, 10) ?? null,
+      qty,
+      location: resolvedLocation,
       status: computeLotUiStatus(updated.status, updated.expiryDate, qty),
       fefoRank: 0,
     };

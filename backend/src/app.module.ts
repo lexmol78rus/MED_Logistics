@@ -27,6 +27,7 @@ import { ExportModule } from './modules/export/export.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { WriteoffDestinationsModule } from './modules/writeoff-destinations/writeoff-destinations.module';
 import { ExpectedReceiptsModule } from './modules/expected-receipts/expected-receipts.module';
+import { ProductRuModule } from './modules/product-ru/product-ru.module';
 
 @Module({
   imports: [
@@ -83,6 +84,7 @@ import { ExpectedReceiptsModule } from './modules/expected-receipts/expected-rec
     SettingsModule,
     WriteoffDestinationsModule,
     ExpectedReceiptsModule,
+    ProductRuModule,
   ],
   providers: [
     {

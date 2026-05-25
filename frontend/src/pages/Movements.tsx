@@ -26,6 +26,7 @@ import { resolveMovementExpiryTone } from '../lib/movements/expiryDisplay';
 import { MovementGroupMasterCell } from '../components/movements/MovementGroupMasterCell';
 import { MovementGroupExpandIcon } from '../components/movements/MovementGroupExpandIcon';
 import { MovementGroupDetailRenderer } from '../components/movements/MovementGroupDetailRenderer';
+import { MovementRuButton } from '../components/movements/MovementRuButton';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
 import FilterDrawer from '../components/filters/FilterDrawer';
 import { downloadExport } from '../lib/export/download';
@@ -380,6 +381,32 @@ export default function Movements() {
       cellClass: 'text-xs text-slate-500',
       valueGetter: (p) => movementField(p.data, 'user'),
       valueFormatter: (p) => formatOperatorField(String(p.value ?? ''), usersByEmail),
+    }),
+    compactColumnDef({
+      colId: 'ru',
+      headerName: 'РУ',
+      width: 44,
+      minWidth: 44,
+      maxWidth: 48,
+      flex: 0,
+      pinned: 'right',
+      sortable: false,
+      filter: false,
+      resizable: false,
+      cellClass: 'movement-ru-cell',
+      cellStyle: {
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingLeft: '2px',
+        paddingRight: '2px',
+      },
+      cellRenderer: (params: ICellRendererParams<MovementGridRow>) => {
+        if (isGroupMasterRow(params.data) || params.data?.rowType === 'group-detail') {
+          return null;
+        }
+        return <MovementRuButton productId={params.data?.movement.productId} />;
+      },
     }),
   ], [expandedGroups, usersByEmail]);
 

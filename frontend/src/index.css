@@ -13,6 +13,19 @@
   line-height: normal;
 }
 
+.movements-grid .movement-ru-cell {
+  overflow: visible !important;
+}
+
+.movements-grid .movement-ru-cell .ag-cell-wrapper,
+.movements-grid .movement-ru-cell .ag-cell-value {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  overflow: visible;
+}
+
 .movements-grid .movement-type-cell {
   overflow: visible !important;
 }
@@ -25,6 +38,16 @@
 
 .movements-grid .movement-type-badge {
   max-width: none;
+}
+
+.product-movements-table .movement-type-cell,
+.product-movements-table .movement-destination-cell {
+  justify-content: flex-start;
+  width: auto;
+}
+
+.product-movements-table .movement-type-badge {
+  max-width: 100%;
 }
 
 .movements-grid .movement-destination-cell,
@@ -334,29 +357,34 @@
   background-color: #fef2f2;
 }
 
-/* Movements: grouped operation rows */
-.movements-grid .movement-group-master-row {
+/* Movements & products: grouped expandable rows */
+.movements-grid .movement-group-master-row,
+.products-grid .movement-group-master-row {
   cursor: pointer;
   background-color: #fafbfc;
 }
 
-.movements-grid .movement-group-master-row:hover {
+.movements-grid .movement-group-master-row:hover,
+.products-grid .movement-group-master-row:hover {
   background-color: #f1f5f9 !important;
 }
 
-.movements-grid .movement-group-master-expanded {
+.movements-grid .movement-group-master-expanded,
+.products-grid .movement-group-master-expanded {
   background-color: #f8fafc !important;
 }
 
 /* Expanded group: visually isolated “card zone”, not a table row continuation */
-.movements-grid .ag-row.movement-group-detail-row {
+.movements-grid .ag-row.movement-group-detail-row,
+.products-grid .ag-row.movement-group-detail-row {
   background-color: transparent !important;
   border-top: none !important;
   border-bottom: none !important;
   z-index: 2;
 }
 
-.movements-grid .ag-row.movement-group-detail-active {
+.movements-grid .ag-row.movement-group-detail-active,
+.products-grid .ag-row.movement-group-detail-active {
   z-index: 3;
 }
 
@@ -364,13 +392,21 @@
 .movements-grid .movement-group-detail-row .ag-row,
 .movements-grid .movement-group-detail-row .ag-full-width-row,
 .movements-grid .movement-group-detail-row .ag-full-width-container,
-.movements-grid .movement-group-detail-row .ag-full-width-row-center {
+.movements-grid .movement-group-detail-row .ag-full-width-row-center,
+.products-grid .movement-group-detail-row,
+.products-grid .movement-group-detail-row .ag-row,
+.products-grid .movement-group-detail-row .ag-full-width-row,
+.products-grid .movement-group-detail-row .ag-full-width-container,
+.products-grid .movement-group-detail-row .ag-full-width-row-center {
   overflow: visible !important;
 }
 
 .movements-grid .movement-group-detail-row .ag-full-width-row,
 .movements-grid .movement-group-detail-row .ag-full-width-container,
-.movements-grid .movement-group-detail-row .ag-full-width-row-center {
+.movements-grid .movement-group-detail-row .ag-full-width-row-center,
+.products-grid .movement-group-detail-row .ag-full-width-row,
+.products-grid .movement-group-detail-row .ag-full-width-container,
+.products-grid .movement-group-detail-row .ag-full-width-row-center {
   position: relative !important;
   padding: 0;
   border: none;
@@ -380,7 +416,9 @@
 }
 
 .movements-grid .movement-group-detail-row .ag-cell-wrapper,
-.movements-grid .movement-group-detail-row .ag-cell-value {
+.movements-grid .movement-group-detail-row .ag-cell-value,
+.products-grid .movement-group-detail-row .ag-cell-wrapper,
+.products-grid .movement-group-detail-row .ag-cell-value {
   width: 100%;
   height: auto !important;
   min-height: unset !important;
@@ -390,15 +428,20 @@
 }
 
 /* Host: horizontal inset; vertical rhythm lives in expanded shell (measured) */
-.movements-grid .movement-group-detail-host {
+.movements-grid .movement-group-detail-host,
+.products-grid .movement-group-detail-host {
   box-sizing: border-box;
   height: auto;
   min-height: 0;
   padding: 0 12px;
+  pointer-events: auto;
+  position: relative;
+  z-index: 1;
 }
 
 /* Outer frame — one clear “expanded block” without dimming the whole grid */
-.movements-grid .movement-group-expanded-shell {
+.movements-grid .movement-group-expanded-shell,
+.products-grid .movement-group-expanded-shell {
   margin: 12px 0 24px;
   padding: 12px;
   border-radius: 16px;
@@ -410,13 +453,15 @@
     transform 120ms ease;
 }
 
-.movements-grid .movement-group-detail-active .movement-group-expanded-shell {
+.movements-grid .movement-group-detail-active .movement-group-expanded-shell,
+.products-grid .movement-group-detail-active .movement-group-expanded-shell {
   border-color: #cbd5e1;
   box-shadow: 0 6px 18px rgba(15, 23, 42, 0.06);
   transform: translateY(0);
 }
 
-.movements-grid .movement-group-detail {
+.movements-grid .movement-group-detail,
+.products-grid .movement-group-detail {
   border: 1px solid #dbe3ef;
   border-radius: 14px;
   background: #ffffff;
@@ -429,14 +474,16 @@
 }
 
 /* Spacer inside measured panel — reserves row height so next table row never touches the card */
-.movements-grid .movement-group-detail::after {
+.movements-grid .movement-group-detail::after,
+.products-grid .movement-group-detail::after {
   content: '';
   display: block;
   height: 72px;
   pointer-events: none;
 }
 
-.movements-grid .movement-group-detail-banner {
+.movements-grid .movement-group-detail-banner,
+.products-grid .movement-group-detail-banner {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -445,7 +492,8 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
-.movements-grid .movement-group-detail-banner-title {
+.movements-grid .movement-group-detail-banner-title,
+.products-grid .movement-group-detail-banner-title {
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.02em;
@@ -453,8 +501,32 @@
   line-height: 1.3;
 }
 
-.movements-grid .movement-group-detail-list {
+.movements-grid .movement-group-detail-list,
+.products-grid .movement-group-detail-list {
   background: #f8fafc;
+}
+
+.products-grid .movement-group-detail-card-actionable {
+  pointer-events: auto;
+}
+
+.products-grid .movement-group-detail-card-actionable:hover {
+  border-color: #cbd5e1;
+  background-color: #f8fafc;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+.products-grid .movement-group-detail-card-actionable:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.products-grid .movement-group-detail-row .ag-full-width-row,
+.products-grid .movement-group-detail-row .ag-full-width-container,
+.products-grid .movement-group-detail-row .ag-full-width-row-center,
+.products-grid .movement-group-detail-row .ag-cell-wrapper,
+.products-grid .movement-group-detail-row .ag-cell-value {
+  pointer-events: auto !important;
 }
 
 /* Edit write-off — muted danger, visible on white footer (Tailwind red-50 is too pale) */
@@ -469,13 +541,16 @@
   color: #991b1b;
 }
 
-.movements-grid .movement-group-expand-cell {
+.movements-grid .movement-group-expand-cell,
+.products-grid .movement-group-expand-cell {
   padding-left: 4px !important;
   padding-right: 0 !important;
 }
 
 .movements-grid .ag-cell-movement-qty.movement-group-qty-summary,
-.movements-grid .ag-cell-movement-qty.movement-group-qty-summary .ag-cell-value {
+.movements-grid .ag-cell-movement-qty.movement-group-qty-summary .ag-cell-value,
+.products-grid .ag-cell-stock-qty.movement-group-qty-summary,
+.products-grid .ag-cell-stock-qty.movement-group-qty-summary .ag-cell-value {
   color: #64748b;
   font-weight: 600;
   font-size: 0.6875rem;

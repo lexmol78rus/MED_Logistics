@@ -23,6 +23,7 @@ export interface AppConfiguration {
     forgotPasswordLimit: number;
   };
   settingsEncryptionKey: string;
+  uploadsDir: string;
 }
 
 export default (): AppConfiguration => ({
@@ -57,4 +58,5 @@ export default (): AppConfiguration => ({
     (process.env.NODE_ENV !== 'production'
       ? (process.env.JWT_ACCESS_SECRET ?? '').slice(0, 32)
       : ''),
+  uploadsDir: process.env.UPLOAD_DIR ?? 'uploads',
 });

@@ -108,9 +108,27 @@ model Product {
   barcodes         BarcodeRecord[]
   inventoryRows    InventoryItem[]
   movements        StockMovement[]
-  expectedReceipts ExpectedReceipt[]
+  expectedReceipts           ExpectedReceipt[]
+  registrationCertificates   ProductRegistrationCertificate[]
 
   @@map("products")
+}
+
+model ProductRegistrationCertificate {
+  id           String   @id @default(cuid())
+  productId    String   @map("product_id")
+  fileName     String   @map("file_name")
+  originalName String   @map("original_name")
+  mimeType     String   @map("mime_type")
+  fileSize     Int      @map("file_size")
+  storagePath  String   @map("storage_path")
+  uploadedBy   String?  @map("uploaded_by")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, createdAt])
+  @@map("product_registration_certificates")
 }
 
 model Lot {

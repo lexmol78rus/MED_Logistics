@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { createProduct, updateProduct } from '../../lib/api/products';
 import type { ProductListItem } from '../../types/api';
 import { ApiError } from '../../lib/api/client';
+import { canEditProduct } from '../../lib/rbac/permissions';
+import { useUserStore } from '../../stores/userStore';
 import { toast } from 'sonner';
 
 type ProductFormState = {
@@ -35,6 +37,8 @@ export default function ProductFormDialog({
 }: ProductFormDialogProps) {
   const [form, setForm] = useState<ProductFormState>(emptyForm());
   const [saving, setSaving] = useState(false);
+  const userRole = useUserStore((s) => s.user?.role ?? null);
+  const canEditRef = canEditProduct(userRole);
 
   useEffect(() => {
     if (!open) return;
@@ -62,7 +66,7 @@ export default function ProductFormDialog({
   if (!open) return null;
 
   const handleSave = async () => {
-    if (!form.name.trim() || (!product && !form.ref.trim())) {
+    if (!form.ref.trim() || !form.name.trim()) {
       toast.error('Заполните REF и наименование');
       return;
     }
@@ -70,11 +74,16 @@ export default function ProductFormDialog({
     setSaving(true);
     try {
       if (product) {
-        await updateProduct(product.id, {
+        const refNormalized = form.ref.trim().toUpperCase();
+        const payload = {
           name: form.name.trim(),
           manufacturer: form.manufacturer.trim() || undefined,
           barcode: form.barcode.trim() || undefined,
-        });
+          ...(canEditRef && refNormalized !== product.ref.trim().toUpperCase()
+            ? { sku: refNormalized }
+            : {}),
+        };
+        await updateProduct(product.id, payload);
         toast.success('Товар обновлён');
       } else {
         await createProduct({
@@ -129,13 +138,17 @@ export default function ProductFormDialog({
             </label>
             <input
               id="product-ref"
-              className="h-9 rounded border border-slate-300 px-3 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="h-9 rounded border border-slate-300 px-3 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-500"
               value={form.ref}
               onChange={(e) => setForm((f) => ({ ...f, ref: e.target.value }))}
-              disabled={!!product}
+              disabled={!!product && !canEditRef}
               placeholder="Например REF-1102"
             />
-            <p className="text-[10px] text-slate-400">Уникальный идентификатор товара (например REF-1102)</p>
+            <p className="text-[10px] text-slate-400">
+              {product && canEditRef
+                ? 'REF можно исправить при опечатке; должен оставаться уникальным в системе'
+                : 'Уникальный идентификатор товара (например REF-1102)'}
+            </p>
           </div>
           <label className="text-[10px] font-bold uppercase text-slate-500">Наименование</label>
           <input

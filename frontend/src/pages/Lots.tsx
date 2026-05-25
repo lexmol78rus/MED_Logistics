@@ -169,7 +169,7 @@ export default function Lots() {
     ...(SHOW_WAREHOUSE_LOCATIONS
       ? [flexTextColumnDef({
           field: 'location' as const,
-          headerName: 'ЛОКАЦИЯ',
+          headerName: 'АДРЕС ЯЧЕЙКИ',
           minWidth: 120,
           cellClass: 'text-xs text-slate-600',
           valueFormatter: (p: { value: unknown }) => (p.value as string | null) ?? '—',

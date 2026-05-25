@@ -54,6 +54,9 @@ services:
       SMTP_FROM: ${SMTP_FROM:-}
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in deploy/.env}
       INTEGRATION_DEBUG: ${INTEGRATION_DEBUG:-false}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - med_warehouse_uploads_prod:/app/uploads
     healthcheck:
       test:
         [
@@ -90,3 +93,4 @@ services:
 
 volumes:
   med_warehouse_pg_prod: {}
+  med_warehouse_uploads_prod: {}

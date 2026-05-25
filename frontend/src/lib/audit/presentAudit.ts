@@ -191,9 +191,15 @@ export function buildAuditDescription(
     const name = str(meta.name);
     const sku = str(meta.sku);
     const barcode = str(meta.barcode);
-    if (action === 'product.update') return [`Изменён товар`, name ? quote(name) : sku ? `REF ${sku}` : '']
-      .filter(Boolean)
-      .join('\n');
+    if (action === 'product.update') {
+      const newSku = str(meta.newSku);
+      const refLine = newSku
+        ? `REF ${sku} → ${newSku}`
+        : sku
+          ? `REF ${sku}`
+          : '';
+      return [`Изменён товар`, name ? quote(name) : refLine].filter(Boolean).join('\n');
+    }
     return [
       action === 'product.quick_create' ? 'Быстро создан товар' : 'Создан товар',
       name ? quote(name) : '',

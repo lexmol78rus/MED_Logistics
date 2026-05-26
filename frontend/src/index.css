@@ -569,6 +569,21 @@
   background-color: #dbeafe !important;
 }
 
+/* Clickable product links inside truncated AG Grid cells */
+.compact-data-grid .ag-cell-link .ag-cell-value,
+.ag-theme-quartz .ag-cell-link .ag-cell-value,
+.ag-theme-alpine .ag-cell-link .ag-cell-value {
+  cursor: default;
+}
+
+.compact-data-grid .ag-cell-link button,
+.ag-theme-quartz .ag-cell-link button,
+.ag-theme-alpine .ag-cell-link button {
+  cursor: pointer;
+  position: relative;
+  z-index: 1;
+}
+
 /* Truncated text cells: ellipsis + tooltip only when overflow (tooltipShowMode: whenTruncated) */
 .compact-data-grid .ag-cell-truncate .ag-cell-value,
 .ag-theme-quartz .ag-cell-truncate .ag-cell-value,

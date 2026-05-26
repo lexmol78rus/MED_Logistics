@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { LotStatus, MovementType } from '@prisma/client';
 import { decimalToNumber } from '../../common/utils/decimal.util';
+import { expiryThresholdDates, resolveExpiryThresholds } from '../../common/utils/expiry-thresholds.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExpiryService } from '../expiry/expiry.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
-
-const DAY_MS = 24 * 60 * 60 * 1000;
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class DashboardService {
@@ -13,12 +13,17 @@ export class DashboardService {
     private readonly prisma: PrismaService,
     private readonly balance: InventoryBalanceService,
     private readonly expiry: ExpiryService,
+    private readonly settings: SettingsService,
   ) {}
 
   async getSummary() {
     const now = new Date();
-    const in30 = new Date(now.getTime() + 30 * DAY_MS);
-    const in90 = new Date(now.getTime() + 90 * DAY_MS);
+    const cfg = await this.settings.get();
+    const thresholds = resolveExpiryThresholds({
+      warningDays: cfg.expiryWarningDays,
+      criticalDays: cfg.expiryCriticalDays,
+    });
+    const { inCritical, inWarning } = expiryThresholdDates(now, thresholds);
 
     const [
       inventoryRows,
@@ -35,22 +40,17 @@ export class DashboardService {
       this.prisma.inventoryItem.findMany({
         select: { quantity: true },
       }),
+      this.prisma.lot.count(),
+      this.expiry.countCriticalRisks(now, thresholds),
       this.prisma.lot.count({
         where: {
-          status: { in: [LotStatus.OK, LotStatus.WARNING] },
-          inventoryRows: { some: { quantity: { gt: 0 } } },
-        },
-      }),
-      this.expiry.countCriticalRisks(now),
-      this.prisma.lot.count({
-        where: {
-          expiryDate: { lte: in30, gt: now },
+          expiryDate: { lte: inCritical, gt: now },
           inventoryRows: { some: { quantity: { gt: 0 } } },
         },
       }),
       this.prisma.lot.count({
         where: {
-          expiryDate: { lte: in90, gt: in30 },
+          expiryDate: { lte: inWarning, gt: inCritical },
           inventoryRows: { some: { quantity: { gt: 0 } } },
         },
       }),

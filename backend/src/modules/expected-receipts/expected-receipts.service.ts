@@ -268,7 +268,7 @@ export class ExpectedReceiptsService {
           data: {
             expectedReceiptId: id,
             type: ExpectedReceiptEventType.UPDATED,
-            message: dto.comment?.trim() || null,
+            message: dto.reason.trim(),
             actorEmail: actorEmail ?? null,
           },
         });
@@ -291,18 +291,20 @@ export class ExpectedReceiptsService {
     return mapReceipt(row);
   }
 
-  async cancel(id: string, actorEmail?: string, actorId?: string) {
+  async cancel(id: string, comment: string, actorEmail?: string, actorId?: string) {
     const current = await this.prisma.expectedReceipt.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Ожидание не найдено');
     if (!ACTIVE_STATUSES.includes(current.status)) {
       throw new BadRequestException('Ожидание уже закрыто или отменено');
     }
 
+    const message = comment.trim();
     const row = await this.prisma.$transaction(async (tx) => {
       await tx.expectedReceiptEvent.create({
         data: {
           expectedReceiptId: id,
           type: ExpectedReceiptEventType.CANCELLED,
+          message,
           actorEmail: actorEmail ?? null,
         },
       });
@@ -318,23 +320,26 @@ export class ExpectedReceiptsService {
       action: 'expected_receipt.cancel',
       entityType: 'expected_receipt',
       entityId: id,
+      metadata: { comment: message },
     });
 
     return mapReceipt(row);
   }
 
-  async close(id: string, actorEmail?: string, actorId?: string) {
+  async close(id: string, comment: string, actorEmail?: string, actorId?: string) {
     const current = await this.prisma.expectedReceipt.findUnique({ where: { id } });
     if (!current) throw new NotFoundException('Ожидание не найдено');
     if (!ACTIVE_STATUSES.includes(current.status)) {
       throw new BadRequestException('Ожидание уже закрыто или отменено');
     }
 
+    const message = comment.trim();
     const row = await this.prisma.$transaction(async (tx) => {
       await tx.expectedReceiptEvent.create({
         data: {
           expectedReceiptId: id,
           type: ExpectedReceiptEventType.CLOSED,
+          message,
           actorEmail: actorEmail ?? null,
         },
       });
@@ -350,6 +355,7 @@ export class ExpectedReceiptsService {
       action: 'expected_receipt.close',
       entityType: 'expected_receipt',
       entityId: id,
+      metadata: { comment: message },
     });
 
     return mapReceipt(row);

@@ -119,6 +119,12 @@ export default function ReceivingCart({
                 <span className="shrink-0 font-bold uppercase tracking-wide text-slate-600">Кол-во</span>
                 <span className="font-mono font-bold text-slate-900 tabular-nums">{item.quantity} шт</span>
               </div>
+              {item.location && (
+                <div className="flex items-start justify-between gap-3">
+                  <span className="shrink-0 font-bold uppercase tracking-wide text-slate-600">Ячейка</span>
+                  <span className="font-mono font-semibold text-slate-900">{item.location}</span>
+                </div>
+              )}
               {item.expectedReceiptLabel && (
                 <div className="flex flex-col gap-1 pt-1 border-t border-slate-100">
                   <span className="text-[10px] font-bold uppercase tracking-wide text-blue-700">

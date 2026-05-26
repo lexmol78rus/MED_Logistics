@@ -55,6 +55,8 @@ services:
       SETTINGS_ENCRYPTION_KEY: ${SETTINGS_ENCRYPTION_KEY:?Set SETTINGS_ENCRYPTION_KEY in deploy/.env}
       INTEGRATION_DEBUG: ${INTEGRATION_DEBUG:-false}
       UPLOAD_DIR: /app/uploads
+      # Dangerous operation toggle (keep false by default)
+      ALLOW_NOMENCLATURE_PURGE: ${ALLOW_NOMENCLATURE_PURGE:-false}
     volumes:
       - med_warehouse_uploads_prod:/app/uploads
     healthcheck:

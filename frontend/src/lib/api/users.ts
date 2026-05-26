@@ -1,4 +1,5 @@
 import { apiFetch } from './client';
+import { clampPageSize } from '../pagination';
 import type { UserRole } from '../rbac/permissions';
 import { ROLE_LABELS } from '../rbac/permissions';
 
@@ -61,7 +62,7 @@ export function fetchUsers(params: {
 }) {
   const qs = new URLSearchParams();
   if (params.page) qs.set('page', String(params.page));
-  if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+  if (params.pageSize) qs.set('pageSize', String(clampPageSize(params.pageSize)));
   if (params.search) qs.set('search', params.search);
   if (params.role) qs.set('role', params.role);
   const query = qs.toString();

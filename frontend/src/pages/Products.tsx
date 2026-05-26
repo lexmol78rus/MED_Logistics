@@ -30,6 +30,7 @@ import type { ProductListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { canCreateProduct, canEditProduct, canExport } from '../lib/rbac/permissions';
+import { getExpiryThresholds, isExpiryCritical } from '../lib/expiry/thresholds';
 import { useUserStore } from '../stores/userStore';
 import { ProductStatusBadge } from '../components/products/ProductStatusBadge';
 import { MovementGroupExpandIcon } from '../components/movements/MovementGroupExpandIcon';
@@ -56,6 +57,7 @@ function productField(
 }
 
 export default function Products() {
+  const expiryThresholds = getExpiryThresholds();
   const userRole = useUserStore((s) => s.user?.role ?? null);
   const navigate = useNavigate();
   const gridRef = useRef<AgGridReact<ProductGridRow>>(null);
@@ -126,6 +128,16 @@ export default function Products() {
 
   useEffect(() => {
     void loadProducts();
+  }, [loadProducts]);
+
+  useEffect(() => {
+    const refreshOnVisible = () => {
+      if (document.visibilityState === 'visible') {
+        void loadProducts();
+      }
+    };
+    document.addEventListener('visibilitychange', refreshOnVisible);
+    return () => document.removeEventListener('visibilitychange', refreshOnVisible);
   }, [loadProducts]);
 
   const toggleGroup = useCallback((groupKey: string) => {
@@ -221,9 +233,9 @@ export default function Products() {
           flexTextColumnDef({
             field: 'product.location',
             headerName: 'АДРЕС ЯЧЕЙКИ',
-            minWidth: 110,
-            maxWidth: 150,
-            flex: 0.85,
+            minWidth: 132,
+            maxWidth: 168,
+            flex: 0.9,
             valueGetter: (p) => p.data?.product.location,
             valueFormatter: (p) => (p.value as string | null | undefined) ?? '—',
             cellClass: 'font-mono text-xs text-slate-600',
@@ -301,8 +313,7 @@ export default function Products() {
         'text-red-600 font-bold bg-red-50': (params) => {
           if (isProductGroupMasterRow(params.data)) return false;
           if (params.value === 'Н/Д' || !params.value) return false;
-          const diff = new Date(params.value as string).getTime() - Date.now();
-          return diff < 30 * 24 * 60 * 60 * 1000;
+          return isExpiryCritical(params.value as string, expiryThresholds);
         },
       },
     }),
@@ -313,7 +324,7 @@ export default function Products() {
       valueGetter: (p) => p.data?.product.barcode,
       cellClass: 'font-mono text-[10px] text-slate-400',
     }, GRID_FLEX_DEFAULT),
-  ], [expandedGroups]);
+  ], [expandedGroups, expiryThresholds]);
 
   const defaultColDef = useMemo(() => createDefaultColDef({ wrapText: false, autoHeight: false }), []);
 

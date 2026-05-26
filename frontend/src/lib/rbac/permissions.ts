@@ -59,6 +59,11 @@ export function canExport(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
 }
 
+/** Персональный отчёт смены (PDF) — для сотрудников склада и руководства. */
+export function canShiftReport(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
+}
+
 export function canReceive(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
 }

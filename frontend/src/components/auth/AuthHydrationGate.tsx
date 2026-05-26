@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
+import { fetchSettings } from '../../lib/api/settings';
 import { fetchMe } from '../../lib/api/users';
+import { DEFAULT_SETTINGS, pickWarehouseSettings, saveSettings } from '../../lib/settings/storage';
 import { useAuthStore } from '../../stores/authStore';
 import { syncWriteoffDraftOwner } from '../../stores/writeoffDraftStore';
 import { useUserStore } from '../../stores/userStore';
@@ -44,6 +46,13 @@ export default function AuthHydrationGate({ children }: AuthHydrationGateProps) 
           role: res.user.role,
         });
         syncWriteoffDraftOwner(res.user.userId);
+        void fetchSettings()
+          .then((remote) => {
+            saveSettings(pickWarehouseSettings({ ...DEFAULT_SETTINGS, ...remote }));
+          })
+          .catch(() => {
+            /* keep local cache */
+          });
       })
       .catch(() => {
         useAuthStore.getState().clearAuth();

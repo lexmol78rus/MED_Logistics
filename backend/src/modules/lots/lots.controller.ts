@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import {
   ADMIN_MANAGER,
   ADMIN_MANAGER_OPERATOR,
@@ -10,6 +10,7 @@ import { JwtUser } from '../../common/interfaces/jwt-user.interface';
 import { LotsQueryDto } from './dto/lots-query.dto';
 import { UpdateLotLocationDto } from './dto/update-lot-location.dto';
 import { UpdateLotStatusDto } from './dto/update-lot-status.dto';
+import { VoidLotDto } from './dto/void-lot.dto';
 import { LotsService } from './lots.service';
 
 @Controller('lots')
@@ -46,5 +47,15 @@ export class LotsController {
     @CurrentUser() user?: JwtUser,
   ) {
     return this.lots.updateLocation(id, dto, user?.email);
+  }
+
+  @Roles(...ADMIN_MANAGER)
+  @Post(':id/void')
+  voidLot(
+    @Param('id') id: string,
+    @Body() dto: VoidLotDto,
+    @CurrentUser() user?: JwtUser,
+  ) {
+    return this.lots.voidLot(id, dto, user?.email);
   }
 }

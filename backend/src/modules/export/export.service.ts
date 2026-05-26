@@ -2,9 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { MovementType } from '@prisma/client';
 import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
 import { decimalToNumber } from '../../common/utils/decimal.util';
+import { resolveExpiryThresholds } from '../../common/utils/expiry-thresholds.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ExpiryService } from '../expiry/expiry.service';
+import { SettingsService } from '../settings/settings.service';
 
 function escapeCsv(value: string | number | null | undefined): string {
   const s = value == null ? '' : String(value);
@@ -23,6 +25,7 @@ export class ExportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly expiry: ExpiryService,
+    private readonly settings: SettingsService,
   ) {}
 
   async productsCsv(): Promise<string> {
@@ -47,6 +50,11 @@ export class ExportService {
   }
 
   async lotsCsv(): Promise<string> {
+    const cfg = await this.settings.get();
+    const thresholds = resolveExpiryThresholds({
+      warningDays: cfg.expiryWarningDays,
+      criticalDays: cfg.expiryCriticalDays,
+    });
     const lots = await this.prisma.lot.findMany({
       orderBy: [{ expiryDate: 'asc' }, { lotNumber: 'asc' }],
       include: {
@@ -65,7 +73,7 @@ export class ExportService {
         lot.product.manufacturer,
         lot.expiryDate?.toISOString().slice(0, 10) ?? '',
         qty,
-        computeLotUiStatus(lot.status, lot.expiryDate, qty),
+        computeLotUiStatus(lot.status, lot.expiryDate, qty, thresholds),
         location,
       ];
     });

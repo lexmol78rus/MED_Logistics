@@ -95,6 +95,12 @@ const STATIC: Record<string, ActionConfig> = {
   MAIL_TEST_FAILED: { label: 'Тест почты не удался', category: 'settings', severity: 'warning' },
 
   'export.products': { label: 'Экспорт товаров', category: 'other', severity: 'normal' },
+  'export.shift_report': { label: 'Отчёт смены (PDF)', category: 'other', severity: 'normal' },
+  'export.shift_report.admin': {
+    label: 'Отчёт смены сотрудника (админ)',
+    category: 'other',
+    severity: 'warning',
+  },
 };
 
 const LOT_STATUS: Record<string, ActionConfig> = {

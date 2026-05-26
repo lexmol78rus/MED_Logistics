@@ -17,6 +17,7 @@ export type ReceivingFormDraft = {
   lot: string;
   expiry: string;
   qty: string;
+  location: string;
   linkedExpectedId: string | null;
   editingCartId: string | null;
 };
@@ -26,6 +27,7 @@ export const defaultReceivingFormDraft = (): ReceivingFormDraft => ({
   lot: '',
   expiry: '',
   qty: '',
+  location: '',
   linkedExpectedId: null,
   editingCartId: null,
 });
@@ -93,6 +95,7 @@ export const useReceivingDraftStore = create<ReceivingDraftState>()(
             lot: '',
             expiry: '',
             qty: '',
+            location: '',
             linkedExpectedId: null,
             editingCartId: null,
           },

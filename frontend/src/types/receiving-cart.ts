@@ -8,6 +8,7 @@ export type ReceivingCartItem = {
   lotNumber: string;
   expiryDate: string;
   quantity: number;
+  location: string | null;
   expectedReceiptId: string | null;
   expectedReceiptLabel: string | null;
   operatorEmail: string;

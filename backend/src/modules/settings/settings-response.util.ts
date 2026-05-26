@@ -18,6 +18,7 @@ const WAREHOUSE_KEYS: (keyof SystemSettingsPayload)[] = [
   'uiAnimations',
   'uiAutoRefreshDashboard',
   'notificationEnabled',
+  'activityHistoryRetentionDays',
 ];
 
 /** Never expose mail/smtp in GET or PATCH /settings responses. */

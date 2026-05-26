@@ -2,11 +2,14 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { LotStatus, MovementType, Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
+import { expiryThresholdDates, resolveExpiryThresholds } from '../../common/utils/expiry-thresholds.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { LotsQueryDto } from './dto/lots-query.dto';
 import { UpdateLotLocationDto } from './dto/update-lot-location.dto';
 import { UpdateLotStatusDto } from './dto/update-lot-status.dto';
+import { VoidLotDto } from './dto/void-lot.dto';
 
 export type LotListItem = {
   id: string;
@@ -23,16 +26,26 @@ export type LotListItem = {
 
 @Injectable()
 export class LotsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
+
+  private async getExpiryThresholds() {
+    const cfg = await this.settings.get();
+    return resolveExpiryThresholds({
+      warningDays: cfg.expiryWarningDays,
+      criticalDays: cfg.expiryCriticalDays,
+    });
+  }
 
   async list(query: LotsQueryDto): Promise<PaginatedResponse<LotListItem>> {
     const page = query.page ?? 1;
     const pageSize = query.pageSize ?? 20;
     const search = query.search?.trim();
 
-    const now = new Date();
-    const in30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
-    const in90 = new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000);
+    const thresholds = await this.getExpiryThresholds();
+    const { now, inCritical, inWarning } = expiryThresholdDates(new Date(), thresholds);
 
     const statusMap: Record<string, LotStatus> = {
       ОК: LotStatus.OK,
@@ -43,9 +56,9 @@ export class LotsService {
 
     let expiryFilter: Prisma.LotWhereInput = {};
     if (query.expiryWindow === 'lt30') {
-      expiryFilter = { expiryDate: { lte: in30, gt: now } };
+      expiryFilter = { expiryDate: { lte: inCritical, gt: now } };
     } else if (query.expiryWindow === 'lt90') {
-      expiryFilter = { expiryDate: { lte: in90, gt: in30 } };
+      expiryFilter = { expiryDate: { lte: inWarning, gt: inCritical } };
     } else if (query.expiryWindow === 'expired') {
       expiryFilter = { expiryDate: { lte: now } };
     }
@@ -104,7 +117,7 @@ export class LotsService {
         expiryDate: lot.expiryDate?.toISOString().slice(0, 10) ?? null,
         qty,
         location,
-        status: computeLotUiStatus(lot.status, lot.expiryDate, qty),
+        status: computeLotUiStatus(lot.status, lot.expiryDate, qty, thresholds),
         fefoRank: (page - 1) * pageSize + index + 1,
       };
     });
@@ -178,6 +191,7 @@ export class LotsService {
     );
     const location =
       updated.inventoryRows.find((r) => r.location)?.location ?? null;
+    const thresholds = await this.getExpiryThresholds();
 
     return {
       id: updated.id,
@@ -188,7 +202,7 @@ export class LotsService {
       expiryDate: updated.expiryDate?.toISOString().slice(0, 10) ?? null,
       qty,
       location,
-      status: computeLotUiStatus(updated.status, updated.expiryDate, qty),
+      status: computeLotUiStatus(updated.status, updated.expiryDate, qty, thresholds),
       fefoRank: 0,
     };
   }
@@ -248,6 +262,7 @@ export class LotsService {
     );
     const resolvedLocation =
       updated.inventoryRows.find((r) => r.location)?.location ?? null;
+    const thresholds = await this.getExpiryThresholds();
 
     return {
       id: updated.id,
@@ -258,7 +273,7 @@ export class LotsService {
       expiryDate: updated.expiryDate?.toISOString().slice(0, 10) ?? null,
       qty,
       location: resolvedLocation,
-      status: computeLotUiStatus(updated.status, updated.expiryDate, qty),
+      status: computeLotUiStatus(updated.status, updated.expiryDate, qty, thresholds),
       fefoRank: 0,
     };
   }
@@ -268,7 +283,9 @@ export class LotsService {
       where: { lotNumber: { equals: lotNumber.trim(), mode: 'insensitive' } },
       include: {
         product: { select: { id: true, sku: true, name: true, manufacturer: true } },
-        inventoryRows: { select: { quantity: true, location: true } },
+        inventoryRows: {
+          select: { quantity: true, location: true, reservedQuantity: true },
+        },
         movements: {
           orderBy: { createdAt: 'desc' },
           take: 20,
@@ -293,6 +310,45 @@ export class LotsService {
     const issuedQty = lot.movements
       .filter((m) => m.type === MovementType.ISSUE)
       .reduce((sum, m) => sum + decimalToNumber(m.quantity), 0);
+
+    const reservedQty = lot.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.reservedQuantity),
+      0,
+    );
+
+    const voidBlockReason = this.resolveVoidBlockReason(qty, reservedQty, issuedQty);
+
+    const siblingLotsRaw = await this.prisma.lot.findMany({
+      where: {
+        productId: lot.productId,
+        id: { not: lot.id },
+      },
+      select: {
+        lotNumber: true,
+        expiryDate: true,
+        inventoryRows: { select: { quantity: true } },
+      },
+      orderBy: { expiryDate: 'asc' },
+      take: 30,
+    });
+
+    const siblingLots = siblingLotsRaw
+      .map((s) => ({
+        lotNumber: s.lotNumber,
+        qty: s.inventoryRows.reduce(
+          (sum, row) => sum + decimalToNumber(row.quantity),
+          0,
+        ),
+        expiryDate: s.expiryDate,
+      }))
+      .sort((a, b) => {
+        const aHas = a.qty > 0 ? 1 : 0;
+        const bHas = b.qty > 0 ? 1 : 0;
+        if (bHas !== aHas) return bHas - aHas;
+        const aExp = a.expiryDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        const bExp = b.expiryDate?.getTime() ?? Number.MAX_SAFE_INTEGER;
+        return aExp - bExp;
+      });
 
     const TYPE_LABELS: Record<MovementType, string> = {
       RECEIPT: 'ПРИХОД',
@@ -324,6 +380,13 @@ export class LotsService {
       qty,
       locations,
       distributed: issuedQty,
+      voidable: voidBlockReason === null,
+      voidBlockReason,
+      requiresTransfer: qty > 0,
+      siblingLots: siblingLots.map((s) => ({
+        lot: s.lotNumber,
+        qty: s.qty,
+      })),
       movements: lot.movements.map((m) => ({
         reference: m.reference,
         type: TYPE_LABELS[m.type],
@@ -332,6 +395,208 @@ export class LotsService {
         actor: m.actorEmail,
       })),
     };
+  }
+
+  async voidLot(id: string, dto: VoidLotDto, actorEmail?: string): Promise<{ success: true }> {
+    const comment = dto.comment.trim();
+    const transferLotNumber = dto.transferToLotNumber?.trim().toUpperCase();
+
+    const lot = await this.prisma.lot.findUnique({
+      where: { id },
+      include: {
+        product: { select: { id: true, sku: true, name: true } },
+        inventoryRows: true,
+        movements: { where: { type: MovementType.ISSUE }, select: { quantity: true } },
+      },
+    });
+    if (!lot) throw new NotFoundException('Партия не найдена');
+
+    const qty = lot.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.quantity),
+      0,
+    );
+    const reservedQty = lot.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.reservedQuantity),
+      0,
+    );
+    const issuedQty = lot.movements.reduce(
+      (sum, m) => sum + decimalToNumber(m.quantity),
+      0,
+    );
+
+    const blockReason = this.resolveVoidBlockReason(qty, reservedQty, issuedQty);
+    if (blockReason) {
+      throw new BadRequestException(blockReason);
+    }
+
+    if (qty > 0) {
+      if (!transferLotNumber) {
+        throw new BadRequestException(
+          'На ошибочной партии есть остаток — укажите LOT корректной партии для переноса',
+        );
+      }
+      if (transferLotNumber === lot.lotNumber.toUpperCase()) {
+        throw new BadRequestException('Партия-получатель должна отличаться от удаляемой');
+      }
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      if (qty > 0 && transferLotNumber) {
+        const targetLot = await tx.lot.findUnique({
+          where: {
+            productId_lotNumber: {
+              productId: lot.productId,
+              lotNumber: transferLotNumber,
+            },
+          },
+        });
+        if (!targetLot) {
+          throw new NotFoundException(
+            `Партия ${transferLotNumber} не найдена у этого товара — создайте её приёмкой или выберите существующую`,
+          );
+        }
+        if (targetLot.status === LotStatus.BLOCKED) {
+          throw new BadRequestException(
+            'Партия-получатель заблокирована — сначала разблокируйте или выберите другую',
+          );
+        }
+
+        await this.transferInventoryForVoid(
+          tx,
+          lot.id,
+          targetLot.id,
+          lot.productId,
+          comment,
+          actorEmail,
+        );
+      }
+
+      await tx.stockMovement.create({
+        data: {
+          reference: await this.nextReference(tx),
+          productId: lot.productId,
+          lotId: lot.id,
+          type: MovementType.ADJUSTMENT,
+          quantity: 0,
+          actorEmail: actorEmail ?? null,
+          editReason: comment,
+        },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          action: 'lot.void',
+          entityType: 'lot',
+          entityId: id,
+          metadata: {
+            lotNumber: lot.lotNumber,
+            productId: lot.productId,
+            productSku: lot.product.sku,
+            comment,
+            transferToLotNumber: transferLotNumber ?? null,
+            qtyBeforeVoid: qty,
+          },
+        },
+      });
+
+      await tx.lot.delete({ where: { id } });
+    });
+
+    return { success: true };
+  }
+
+  private resolveVoidBlockReason(
+    qty: number,
+    reservedQty: number,
+    issuedQty: number,
+  ): string | null {
+    if (issuedQty > 0) {
+      return 'По партии уже были отгрузки — удаление невозможно, история должна сохраниться для аудита';
+    }
+    if (reservedQty > 0) {
+      return 'На партии есть зарезервированный остаток — завершите или отмените резервирование';
+    }
+    return null;
+  }
+
+  private async transferInventoryForVoid(
+    tx: Prisma.TransactionClient,
+    sourceLotId: string,
+    targetLotId: string,
+    productId: string,
+    comment: string,
+    actorEmail?: string,
+  ): Promise<void> {
+    const sourceItems = await tx.inventoryItem.findMany({
+      where: { lotId: sourceLotId },
+    });
+
+    const operationGroupId = `void-${sourceLotId}-${Date.now()}`;
+    const transferNote = `Перенос при удалении ошибочной партии: ${comment}`;
+
+    for (const item of sourceItems) {
+      const qty = decimalToNumber(item.quantity);
+      if (qty <= 0) continue;
+
+      const qtyDecimal = item.quantity;
+
+      await tx.stockMovement.create({
+        data: {
+          reference: await this.nextReference(tx),
+          productId,
+          lotId: sourceLotId,
+          type: MovementType.ISSUE,
+          quantity: qtyDecimal,
+          actorEmail: actorEmail ?? null,
+          operationGroupId,
+          editReason: transferNote,
+        },
+      });
+
+      await tx.stockMovement.create({
+        data: {
+          reference: await this.nextReference(tx),
+          productId,
+          lotId: targetLotId,
+          type: MovementType.RECEIPT,
+          quantity: qtyDecimal,
+          actorEmail: actorEmail ?? null,
+          operationGroupId,
+          editReason: transferNote,
+        },
+      });
+
+      const existingTarget = await tx.inventoryItem.findFirst({
+        where: {
+          productId,
+          lotId: targetLotId,
+          location: item.location,
+        },
+      });
+
+      if (existingTarget) {
+        await tx.inventoryItem.update({
+          where: { id: existingTarget.id },
+          data: { quantity: { increment: qtyDecimal } },
+        });
+      } else {
+        await tx.inventoryItem.create({
+          data: {
+            productId,
+            lotId: targetLotId,
+            quantity: qtyDecimal,
+            location: item.location,
+          },
+        });
+      }
+
+      await tx.inventoryItem.delete({ where: { id: item.id } });
+    }
+
+    await tx.barcodeRecord.updateMany({
+      where: { lotId: sourceLotId },
+      data: { lotId: targetLotId },
+    });
   }
 
   private async nextReference(tx: Prisma.TransactionClient): Promise<string> {

@@ -18,18 +18,18 @@ import {
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
-import { Boxes, Search, ShieldAlert, Ban, ShieldCheck, Filter, Download } from 'lucide-react';
+import { Boxes, Search, Filter, Download } from 'lucide-react';
 import FilterDrawer from '../components/filters/FilterDrawer';
 import { downloadExport } from '../lib/export/download';
 import { canExport } from '../lib/rbac/permissions';
-import { useSearchParams } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
-import { fetchLots, updateLotStatus } from '../lib/api/lots';
+import { fetchLots } from '../lib/api/lots';
 import type { LotListItem } from '../types/api';
 import { ApiError } from '../lib/api/client';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
-import { canManageLotStatus } from '../lib/rbac/permissions';
 import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
+import { getExpiryThresholds, isExpiryCritical, isExpiryWarning } from '../lib/expiry/thresholds';
 import { useUserStore } from '../stores/userStore';
 
 const STATUS_FILTERS = [
@@ -40,17 +40,43 @@ const STATUS_FILTERS = [
   { value: 'БЛОК', label: 'БЛОК' },
 ];
 
+function ProductLinkCell({
+  params,
+  label,
+  onNavigate,
+}: {
+  params: ICellRendererParams<LotListItem>;
+  label: string;
+  onNavigate: (productId: string) => void;
+}) {
+  const row = params.data;
+  if (!row?.productId) return label;
+  return (
+    <button
+      type="button"
+      className="inline-block max-w-full truncate text-xs font-medium text-blue-700 hover:underline text-left cursor-pointer"
+      title={label}
+      onClick={(e) => {
+        e.stopPropagation();
+        onNavigate(row.productId);
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 function expiryCellClass(expiryDate: string | null): string {
   if (!expiryDate) return 'font-mono text-xs text-slate-500';
-  const diff = new Date(expiryDate).getTime() - Date.now();
-  if (diff < 30 * 24 * 60 * 60 * 1000) return 'font-mono text-xs text-red-600 font-bold bg-red-50';
-  if (diff < 90 * 24 * 60 * 60 * 1000) return 'font-mono text-xs text-amber-700 font-bold bg-amber-50';
+  if (isExpiryCritical(expiryDate)) return 'font-mono text-xs text-red-600 font-bold bg-red-50';
+  if (isExpiryWarning(expiryDate)) return 'font-mono text-xs text-amber-700 font-bold bg-amber-50';
   return 'font-mono text-xs text-slate-700';
 }
 
 export default function Lots() {
+  const expiryThresholds = getExpiryThresholds();
+  const navigate = useNavigate();
   const userRole = useUserStore((s) => s.user?.role ?? null);
-  const showLotActions = canManageLotStatus(userRole);
   const gridRef = useRef<AgGridReact<LotListItem>>(null);
   const [searchParams] = useSearchParams();
   const productIdFilter = searchParams.get('productId') ?? '';
@@ -72,7 +98,6 @@ export default function Lots() {
   const [rowData, setRowData] = useState<LotListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [actionLotId, setActionLotId] = useState<string | null>(null);
 
   useEffect(() => {
     if (urlSearch) setSearchText(urlSearch);
@@ -112,25 +137,6 @@ export default function Lots() {
     void loadLots();
   }, [loadLots]);
 
-  const handleStatus = useCallback(async (lot: LotListItem, status: 'QUARANTINE' | 'BLOCKED' | 'OK') => {
-    setActionLotId(lot.id);
-    try {
-      await updateLotStatus(lot.id, { status });
-      toast.success(
-        status === 'QUARANTINE'
-          ? 'Партия отправлена в карантин'
-          : status === 'BLOCKED'
-            ? 'Партия заблокирована'
-            : 'Партия разблокирована',
-      );
-      await loadLots();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка изменения статуса');
-    } finally {
-      setActionLotId(null);
-    }
-  }, [loadLots]);
-
   const columnDefs = useMemo<ColDef<LotListItem>[]>(() => [
     centeredColumnDef({
       field: 'fefoRank',
@@ -150,7 +156,14 @@ export default function Lots() {
       field: 'productName',
       headerName: 'НОМЕНКЛАТУРА',
       minWidth: 260,
-      cellClass: 'font-medium text-slate-800 text-xs',
+      cellClass: 'ag-cell-link',
+      cellRenderer: (params: ICellRendererParams<LotListItem>) => (
+        <ProductLinkCell
+          params={params}
+          label={String(params.value ?? '')}
+          onNavigate={(productId) => navigate(`/products/${productId}`)}
+        />
+      ),
     }),
     flexTextColumnDef({
       field: 'lot',
@@ -170,7 +183,7 @@ export default function Lots() {
       ? [flexTextColumnDef({
           field: 'location' as const,
           headerName: 'АДРЕС ЯЧЕЙКИ',
-          minWidth: 120,
+          minWidth: 132,
           cellClass: 'text-xs text-slate-600',
           valueFormatter: (p: { value: unknown }) => (p.value as string | null) ?? '—',
         })]
@@ -193,71 +206,7 @@ export default function Lots() {
         );
       },
     }),
-    ...(showLotActions
-      ? [compactColumnDef({
-      headerName: 'ДЕЙСТВИЯ',
-      flex: 1.4,
-      minWidth: 220,
-      maxWidth: 320,
-      sortable: false,
-      filter: false,
-      cellRenderer: (params: ICellRendererParams<LotListItem>) => {
-        const lot = params.data;
-        if (!lot) return null;
-        const busy = actionLotId === lot.id;
-        const canUnblock = lot.status === 'КАРАНТИН' || lot.status === 'БЛОК';
-        return (
-          <div className="flex items-center gap-1 h-full">
-            {canUnblock ? (
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-6 text-[9px] px-1.5 border-emerald-200 text-emerald-700"
-                disabled={busy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleStatus(lot, 'OK');
-                }}
-              >
-                <ShieldCheck className="w-3 h-3 mr-0.5" />
-                Разблок.
-              </Button>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 text-[9px] px-1.5"
-                  disabled={busy || lot.status === 'КАРАНТИН'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleStatus(lot, 'QUARANTINE');
-                  }}
-                >
-                  <ShieldAlert className="w-3 h-3 mr-0.5" />
-                  Карантин
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-6 text-[9px] px-1.5 border-red-200 text-red-700"
-                  disabled={busy || lot.status === 'БЛОК'}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void handleStatus(lot, 'BLOCKED');
-                  }}
-                >
-                  <Ban className="w-3 h-3 mr-0.5" />
-                  Блок
-                </Button>
-              </>
-            )}
-          </div>
-        );
-      },
-    })]
-      : []),
-  ], [actionLotId, handleStatus, showLotActions]);
+  ], [navigate]);
 
   const defaultColDef = useMemo(() => createDefaultColDef(), []);
 
@@ -401,8 +350,10 @@ export default function Lots() {
           >
             <option value="">Любой</option>
             <option value="expired">Просрочено</option>
-            <option value="lt30">Менее 30 дней</option>
-            <option value="lt90">30–90 дней</option>
+            <option value="lt30">Менее {expiryThresholds.criticalDays} дней</option>
+            <option value="lt90">
+              {expiryThresholds.criticalDays}–{expiryThresholds.warningDays} дней
+            </option>
           </select>
         </div>
         <label className="flex items-center gap-2 text-sm">

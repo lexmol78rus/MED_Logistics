@@ -7,6 +7,7 @@ import {
   Keyboard,
   AlertCircle,
   Plus,
+  MapPin,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { processScanner } from '../lib/api/scanner';
@@ -20,6 +21,7 @@ import { ApiError } from '../lib/api/client';
 import { useScannerField } from '../lib/scanner/useScannerField';
 import ReceivingCreateProductModal from '../components/receiving/ReceivingCreateProductModal';
 import ReceivingCart from '../components/receiving/ReceivingCart';
+import ReceivingProductRu from '../components/receiving/ReceivingProductRu';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
 import { useUserStore } from '../stores/userStore';
 import {
@@ -56,6 +58,7 @@ export default function Receiving() {
     lot,
     expiry,
     qty,
+    location,
     linkedExpectedId,
     editingCartId,
   } = form;
@@ -97,7 +100,14 @@ export default function Receiving() {
         scannedProduct: product,
         ...(options?.keepLotFields
           ? {}
-          : { lot: '', expiry: '', qty: '', linkedExpectedId: null, editingCartId: null }),
+          : {
+              lot: '',
+              expiry: '',
+              qty: '',
+              location: '',
+              linkedExpectedId: null,
+              editingCartId: null,
+            }),
       });
     },
     [setForm],
@@ -122,7 +132,14 @@ export default function Receiving() {
   const openCreateProductModal = useCallback((scannedBarcode: string) => {
     setPendingBarcode(scannedBarcode);
     setPendingReceivingFlow(true);
-    setForm({ scannedProduct: null, lot: '', expiry: '', qty: '', linkedExpectedId: null });
+    setForm({
+      scannedProduct: null,
+      lot: '',
+      expiry: '',
+      qty: '',
+      location: '',
+      linkedExpectedId: null,
+    });
     setCreateModalOpen(true);
   }, [setForm]);
 
@@ -226,6 +243,7 @@ export default function Receiving() {
       lotNumber: lot.trim().toUpperCase(),
       expiryDate: expiry,
       quantity: Number(qty),
+      location: location.trim() || null,
       expectedReceiptId: linkedExpectedId,
       expectedReceiptLabel: linked?.comment ?? (linked ? 'Связанное поступление' : null),
       operatorEmail,
@@ -237,6 +255,7 @@ export default function Receiving() {
     lot,
     expiry,
     qty,
+    location,
     linkedExpectedId,
     activeExpected,
     editingCartId,
@@ -244,7 +263,14 @@ export default function Receiving() {
   ]);
 
   const resetLineFields = useCallback(() => {
-    setForm({ lot: '', expiry: '', qty: '', linkedExpectedId: null, editingCartId: null });
+    setForm({
+      lot: '',
+      expiry: '',
+      qty: '',
+      location: '',
+      linkedExpectedId: null,
+      editingCartId: null,
+    });
   }, [setForm]);
 
   const handleAddToCart = useCallback(() => {
@@ -292,6 +318,7 @@ export default function Receiving() {
         lot: item.lotNumber,
         expiry: item.expiryDate,
         qty: String(item.quantity),
+        location: item.location ?? '',
         linkedExpectedId: item.expectedReceiptId,
       });
     },
@@ -324,6 +351,7 @@ export default function Receiving() {
           lotNumber: item.lotNumber,
           expiryDate: item.expiryDate,
           quantity: item.quantity,
+          ...(item.location ? { location: item.location } : {}),
           ...(item.expectedReceiptId ? { expectedReceiptId: item.expectedReceiptId } : {}),
         });
         movementIds.push(result.movementId);
@@ -496,6 +524,30 @@ export default function Receiving() {
                       onChange={(e) => setForm({ qty: e.target.value })}
                       placeholder="0"
                       className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-base font-bold text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
+                  <div className="md:col-span-2 flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                      <MapPin className="w-3 h-3" />
+                      Адрес хранения в ячейке
+                    </label>
+                    <input
+                      value={location}
+                      onChange={(e) => setForm({ location: e.target.value })}
+                      placeholder="Напр. A-12-03"
+                      className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-sm font-bold text-slate-800"
+                    />
+                    <p className="text-[10px] text-slate-400">
+                      Необязательно — можно указать сейчас или позже в карточке товара
+                    </p>
+                  </div>
+                  <div className="md:col-span-2">
+                    <ReceivingProductRu
+                      productId={scannedProduct.id}
+                      userRole={userRole}
                     />
                   </div>
                 </div>

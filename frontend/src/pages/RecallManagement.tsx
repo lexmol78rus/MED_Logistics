@@ -1,8 +1,11 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, AlertOctagon, Lock, History, ShieldAlert } from 'lucide-react';
+import { Search, AlertOctagon, Lock, History, ShieldAlert, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/HoverHint';
 import { toast } from 'sonner';
+import VoidLotDialog from '../components/lots/VoidLotDialog';
+import { LOT_ACTION_HINTS } from '../lib/lots/actionHints';
 import { fetchRecallLot, recallUpdateStatus, type RecallLotDetail } from '../lib/api/recall';
 import { ApiError } from '../lib/api/client';
 import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
@@ -13,6 +16,7 @@ export default function RecallManagement() {
   const [lotData, setLotData] = useState<RecallLotDetail | null>(null);
   const [loading, setLoading] = useState(false);
   const [acting, setActing] = useState(false);
+  const [voidOpen, setVoidOpen] = useState(false);
 
   const handleSearch = async () => {
     if (!searchLot.trim()) return;
@@ -44,6 +48,9 @@ export default function RecallManagement() {
   };
 
   const isActive = lotData?.dbStatus === 'OK' || lotData?.dbStatus === 'WARNING';
+
+  const voidButtonClass =
+    'bg-white border-2 border-rose-600 text-rose-700 shadow-sm ring-1 ring-rose-100 hover:bg-rose-50 hover:border-rose-700 hover:text-rose-800 disabled:opacity-50';
 
   return (
     <div className="h-full max-w-4xl mx-auto flex flex-col gap-4 py-8">
@@ -153,46 +160,107 @@ export default function RecallManagement() {
             </div>
 
             {isActive ? (
-              <div className="flex flex-col sm:flex-row gap-2 justify-center">
-                <Button
-                  disabled={acting}
-                  onClick={() => void handleAction('QUARANTINE')}
-                  className="h-10 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+              <div className="flex flex-col sm:flex-row flex-wrap gap-2 justify-center">
+                <HoverHint tip={LOT_ACTION_HINTS.quarantine} className="inline-flex">
+                  <Button
+                    disabled={acting}
+                    onClick={() => void handleAction('QUARANTINE')}
+                    className="h-10 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs"
+                  >
+                    <ShieldAlert className="w-4 h-4 mr-2" />
+                    Карантин
+                  </Button>
+                </HoverHint>
+                <HoverHint tip={LOT_ACTION_HINTS.block} className="inline-flex">
+                  <Button
+                    disabled={acting}
+                    onClick={() => void handleAction('BLOCKED', true)}
+                    className="h-10 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs"
+                  >
+                    <Lock className="w-4 h-4 mr-2" />
+                    Отзыв (блокировка)
+                  </Button>
+                </HoverHint>
+                <HoverHint
+                  tip={
+                    lotData.voidable !== false
+                      ? LOT_ACTION_HINTS.void
+                      : (lotData.voidBlockReason ?? LOT_ACTION_HINTS.void)
+                  }
+                  className="inline-flex"
                 >
-                  <ShieldAlert className="w-4 h-4 mr-2" />
-                  Карантин
-                </Button>
-                <Button
-                  disabled={acting}
-                  onClick={() => void handleAction('BLOCKED', true)}
-                  className="h-10 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs"
-                >
-                  <Lock className="w-4 h-4 mr-2" />
-                  Отзыв (блокировка)
-                </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={lotData.voidable === false || acting}
+                    onClick={() => setVoidOpen(true)}
+                    className={`h-10 text-xs font-bold ${voidButtonClass}`}
+                  >
+                    <Trash2 className="w-4 h-4 mr-2 shrink-0 text-rose-600" />
+                    Удалить (ошибочная)
+                  </Button>
+                </HoverHint>
                 <Button
                   variant="outline"
                   onClick={() => navigate(`/products/${lotData.productId}`)}
-                  className="h-10 text-xs font-bold"
+                  className="h-10 text-xs font-bold border-slate-300 text-slate-600 bg-slate-50 hover:bg-slate-100"
                 >
                   Открыть товар
                 </Button>
               </div>
             ) : (
-              <div className="flex flex-col items-center py-6 border-2 border-dashed border-rose-300 rounded bg-rose-50/50 text-rose-600">
-                <History className="w-10 h-10 mb-3 opacity-60" />
+              <div className="flex flex-col items-center py-6 border-2 border-dashed border-rose-300 rounded bg-rose-50/50 text-rose-600 gap-3">
+                <History className="w-10 h-10 opacity-60" />
                 <h3 className="font-bold text-base uppercase tracking-widest">LOT / Партия изолирована</h3>
-                <Button
-                  disabled={acting}
-                  className="mt-4 h-9 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold"
-                  onClick={() => void handleAction('OK')}
-                >
-                  Разблокировать
-                </Button>
+                <div className="flex flex-wrap gap-2 justify-center">
+                  <Button
+                    disabled={acting}
+                    className="h-9 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold"
+                    onClick={() => void handleAction('OK')}
+                  >
+                    Разблокировать
+                  </Button>
+                  <HoverHint
+                    tip={
+                      lotData.voidable !== false
+                        ? LOT_ACTION_HINTS.void
+                        : (lotData.voidBlockReason ?? LOT_ACTION_HINTS.void)
+                    }
+                    className="inline-flex"
+                  >
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={lotData.voidable === false || acting}
+                      onClick={() => setVoidOpen(true)}
+                      className={`h-9 text-xs font-bold ${voidButtonClass}`}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2 shrink-0 text-rose-600" />
+                      Удалить (ошибочная)
+                    </Button>
+                  </HoverHint>
+                </div>
               </div>
+            )}
+
+            {lotData.voidable === false && lotData.voidBlockReason && (
+              <p className="text-[11px] text-slate-500 text-center">{lotData.voidBlockReason}</p>
             )}
           </div>
         </div>
+      )}
+
+      {lotData && (
+        <VoidLotDialog
+          open={voidOpen}
+          lot={lotData}
+          onClose={() => setVoidOpen(false)}
+          onSuccess={() => {
+            setLotData(null);
+            setSearchLot('');
+            toast.success('Ошибочная партия удалена');
+          }}
+        />
       )}
     </div>
   );

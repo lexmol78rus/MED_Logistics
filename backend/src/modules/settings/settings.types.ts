@@ -13,6 +13,8 @@ export type SystemSettingsPayload = {
   uiAnimations: boolean;
   uiAutoRefreshDashboard: boolean;
   notificationEnabled: boolean;
+  /** Срок хранения журнала действий пользователей (дней). */
+  activityHistoryRetentionDays: number;
 };
 
 export const DEFAULT_SYSTEM_SETTINGS: SystemSettingsPayload = {
@@ -30,4 +32,5 @@ export const DEFAULT_SYSTEM_SETTINGS: SystemSettingsPayload = {
   uiAnimations: true,
   uiAutoRefreshDashboard: false,
   notificationEnabled: true,
+  activityHistoryRetentionDays: 90,
 };

@@ -1,5 +1,10 @@
 import { LotStatus } from '@prisma/client';
 import { computeInventoryBalance } from './inventory-balance.util';
+import {
+  daysUntilExpiryCeil,
+  type ExpiryThresholds,
+  resolveExpiryThresholds,
+} from './expiry-thresholds.util';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -52,12 +57,13 @@ export function resolveNearestAvailableExpiry(lots: ProductLotContext[]): Date |
 export function computeProductStatus(
   availableQty: number,
   nearestExpiry: Date | null,
+  thresholds: ExpiryThresholds = resolveExpiryThresholds(),
 ): ProductStatusLabel {
   if (availableQty <= 0) return 'БЛОК';
   if (!nearestExpiry) return 'АКТИВЕН';
 
-  const daysUntilExpiry = (nearestExpiry.getTime() - Date.now()) / DAY_MS;
-  if (daysUntilExpiry < 30) return 'КРИТИЧНО';
+  const daysUntilExpiry = daysUntilExpiryCeil(nearestExpiry);
+  if (daysUntilExpiry < thresholds.criticalDays) return 'КРИТИЧНО';
   return 'АКТИВЕН';
 }
 
@@ -65,13 +71,14 @@ export function computeLotUiStatus(
   status: LotStatus,
   expiryDate: Date | null,
   qty: number,
+  thresholds: ExpiryThresholds = resolveExpiryThresholds(),
 ): 'ОК' | 'ВНИМАНИЕ' | 'КАРАНТИН' | 'БЛОК' {
   if (status === LotStatus.QUARANTINE) return 'КАРАНТИН';
   if (status === LotStatus.BLOCKED) return 'БЛОК';
   if (qty <= 0) return 'ОК';
   if (expiryDate) {
-    const daysUntilExpiry = (expiryDate.getTime() - Date.now()) / DAY_MS;
-    if (daysUntilExpiry < 30) return 'ВНИМАНИЕ';
+    const daysUntilExpiry = daysUntilExpiryCeil(expiryDate);
+    if (daysUntilExpiry < thresholds.warningDays) return 'ВНИМАНИЕ';
   }
   if (status === LotStatus.WARNING) return 'ВНИМАНИЕ';
   return 'ОК';

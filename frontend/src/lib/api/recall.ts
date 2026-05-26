@@ -21,6 +21,10 @@ export type RecallLotDetail = {
     date: string;
     actor: string | null;
   }[];
+  voidable: boolean;
+  voidBlockReason: string | null;
+  requiresTransfer: boolean;
+  siblingLots: { lot: string; qty: number }[];
 };
 
 export function fetchRecallLot(lotNumber: string) {
@@ -35,5 +39,15 @@ export function recallUpdateStatus(
   return apiFetch<LotListItem>(`/lots/${id}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status, recall }),
+  });
+}
+
+export function voidLot(
+  id: string,
+  body: { comment: string; transferToLotNumber?: string },
+) {
+  return apiFetch<{ success: true }>(`/lots/${id}/void`, {
+    method: 'POST',
+    body: JSON.stringify(body),
   });
 }

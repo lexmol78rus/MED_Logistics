@@ -13,6 +13,8 @@ export type WarehouseSettings = {
   uiShowFefoHints: boolean;
   uiAnimations: boolean;
   uiAutoRefreshDashboard: boolean;
+  /** Срок хранения журнала действий пользователей (дней). */
+  activityHistoryRetentionDays: number;
 };
 
 /** Legacy keys that must never be PATCHed to /settings (mail uses /settings/mail). */
@@ -39,6 +41,7 @@ const WAREHOUSE_SETTINGS_KEYS: (keyof WarehouseSettings)[] = [
   'uiShowFefoHints',
   'uiAnimations',
   'uiAutoRefreshDashboard',
+  'activityHistoryRetentionDays',
 ];
 
 const STORAGE_KEY = 'med-warehouse-settings';
@@ -67,6 +70,7 @@ export const DEFAULT_SETTINGS: WarehouseSettings = {
   uiShowFefoHints: true,
   uiAnimations: true,
   uiAutoRefreshDashboard: false,
+  activityHistoryRetentionDays: 90,
 };
 
 export function stripLegacySettingsKeys<T extends Record<string, unknown>>(raw: T): T {
@@ -111,6 +115,7 @@ export function buildSettingsPatchPayload(
     uiShowFefoHints: s.uiShowFefoHints,
     uiAnimations: s.uiAnimations,
     uiAutoRefreshDashboard: s.uiAutoRefreshDashboard,
+    activityHistoryRetentionDays: s.activityHistoryRetentionDays,
   };
 }
 
@@ -179,6 +184,16 @@ export function saveSettings(settings: WarehouseSettings): void {
   const cleaned = buildSettingsPatchPayload(settings);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(cleaned));
   localStorage.setItem(STORAGE_VERSION_KEY, String(CURRENT_STORAGE_VERSION));
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('warehouse-settings-updated'));
+  }
+}
+
+/** Notify pages that read thresholds from localStorage (e.g. after Settings save). */
+export function notifyWarehouseSettingsUpdated(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('warehouse-settings-updated'));
+  }
 }
 
 export function assertPatchPayloadClean(payload: Record<string, unknown>): void {

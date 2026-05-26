@@ -1,5 +1,10 @@
-import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
-import { ADMIN_MANAGER, ADMIN_MANAGER_OPERATOR, READ_ROLES } from '../../common/constants/roles';
+import { Body, Controller, Get, Param, Patch, Post, Query, ForbiddenException } from '@nestjs/common';
+import {
+  ADMIN_MANAGER,
+  ADMIN_MANAGER_OPERATOR,
+  ADMIN_ONLY,
+  READ_ROLES,
+} from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtUser } from '../../common/interfaces/jwt-user.interface';
@@ -8,6 +13,7 @@ import { CreateProductDto } from './dto/create-product.dto';
 import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { ProductsService } from './products.service';
+import { PurgeAllProductsDto } from './dto/purge-all-products.dto';
 
 @Controller('products')
 export class ProductsController {
@@ -45,5 +51,23 @@ export class ProductsController {
     @CurrentUser() user?: JwtUser,
   ) {
     return this.products.update(id, dto, user?.email);
+  }
+
+  /**
+   * Dangerous operation. Intended for initial go-live cleanup of test nomenclature.
+   * Guarded by:
+   * - ADMIN role
+   * - explicit env toggle
+   * - explicit confirmation phrase
+   */
+  @Roles(...ADMIN_ONLY)
+  @Post('purge-all')
+  async purgeAll(@Body() dto: PurgeAllProductsDto, @CurrentUser() user?: JwtUser) {
+    if (process.env.ALLOW_NOMENCLATURE_PURGE !== 'true') {
+      throw new ForbiddenException(
+        'Операция отключена. Установите ALLOW_NOMENCLATURE_PURGE=true в окружении',
+      );
+    }
+    return this.products.purgeAllProducts(dto, user?.email);
   }
 }

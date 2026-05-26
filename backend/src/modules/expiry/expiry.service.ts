@@ -3,8 +3,16 @@ import { LotStatus, Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { buildCriticalRiskLotWhere, EXPIRY_DAY_MS } from '../../common/utils/expiry-critical.util';
+import {
+  daysUntilExpiryCeil,
+  expiryRiskLabel,
+  expiryThresholdDates,
+  resolveExpiryThresholds,
+  type ExpiryThresholds,
+} from '../../common/utils/expiry-thresholds.util';
 import { computeLotUiStatus } from '../../common/utils/inventory-status.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 import { ExpiryQueryDto } from './dto/expiry-query.dto';
 
 const DAY_MS = EXPIRY_DAY_MS;
@@ -23,28 +31,31 @@ export type ExpiryListItem = {
   lotDbStatus: LotStatus;
 };
 
-function expiryRiskLabel(days: number | null): string {
-  if (days == null) return 'Внимание';
-  if (days < 0) return 'Просрочено';
-  if (days < 30) return 'Критичный';
-  if (days < 90) return 'Внимание';
-  return 'ОК';
-}
-
 @Injectable()
 export class ExpiryService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly settings: SettingsService,
+  ) {}
+
+  private async getExpiryThresholds(): Promise<ExpiryThresholds> {
+    const cfg = await this.settings.get();
+    return resolveExpiryThresholds({
+      warningDays: cfg.expiryWarningDays,
+      criticalDays: cfg.expiryCriticalDays,
+    });
+  }
 
   async list(query: ExpiryQueryDto): Promise<PaginatedResponse<ExpiryListItem>> {
     const page = query.page ?? 1;
     const pageSize = Math.min(query.pageSize ?? 100, 100);
-    const now = Date.now();
-    const in30 = new Date(now + 30 * DAY_MS);
-    const in90 = new Date(now + 90 * DAY_MS);
+    const thresholds = await this.getExpiryThresholds();
+    const nowMs = Date.now();
+    const { now, inCritical, inWarning } = expiryThresholdDates(new Date(nowMs), thresholds);
 
     const where: Prisma.LotWhereInput =
       query.filter === 'critical'
-        ? buildCriticalRiskLotWhere()
+        ? buildCriticalRiskLotWhere(now, thresholds)
         : {
             expiryDate: { not: null },
             inventoryRows: { some: { quantity: { gt: 0 } } },
@@ -57,16 +68,16 @@ export class ExpiryService {
     }
 
     if (query.filter === 'expired') {
-      where.expiryDate = { lt: new Date() };
+      where.expiryDate = { lt: now };
     } else if (query.filter === 'lt30') {
-      where.expiryDate = { gte: new Date(), lte: in30 };
+      where.expiryDate = { gte: now, lte: inCritical };
     } else if (query.filter === 'lt90') {
-      where.expiryDate = { gt: in30, lte: in90 };
+      where.expiryDate = { gt: inCritical, lte: inWarning };
     } else if (query.filter !== 'critical') {
       // All risks: expiry buckets + isolated lots (quarantine / block)
       where.OR = [
-        { expiryDate: { lt: new Date() } },
-        { expiryDate: { lte: in90 } },
+        { expiryDate: { lt: now } },
+        { expiryDate: { lte: inWarning } },
         { status: { in: [LotStatus.QUARANTINE, LotStatus.BLOCKED] } },
       ];
     }
@@ -79,13 +90,13 @@ export class ExpiryService {
       } else if (s === 'блок' || s === 'blocked') {
         statusWhere.push({ status: LotStatus.BLOCKED });
       } else if (s === 'просрочено' || s === 'expired') {
-        statusWhere.push({ expiryDate: { lt: new Date() } });
+        statusWhere.push({ expiryDate: { lt: now } });
       } else if (s === 'критичный' || s === 'critical') {
-        statusWhere.push({ expiryDate: { gte: new Date(), lte: in30 } });
+        statusWhere.push({ expiryDate: { gte: now, lte: inCritical } });
       } else if (s === 'внимание' || s === 'warning') {
         statusWhere.push({
           OR: [
-            { expiryDate: { gt: in30, lte: in90 } },
+            { expiryDate: { gt: inCritical, lte: inWarning } },
             { status: LotStatus.WARNING },
           ],
         });
@@ -114,10 +125,8 @@ export class ExpiryService {
         (sum, row) => sum + decimalToNumber(row.quantity),
         0,
       );
-      const days = lot.expiryDate
-        ? Math.ceil((lot.expiryDate.getTime() - now) / DAY_MS)
-        : null;
-      const uiStatus = computeLotUiStatus(lot.status, lot.expiryDate, qty);
+      const days = lot.expiryDate ? daysUntilExpiryCeil(lot.expiryDate, nowMs) : null;
+      const uiStatus = computeLotUiStatus(lot.status, lot.expiryDate, qty, thresholds);
 
       return {
         id: lot.id,
@@ -129,7 +138,7 @@ export class ExpiryService {
         expiry: lot.expiryDate?.toISOString().slice(0, 10) ?? null,
         days,
         qty,
-        status: expiryRiskLabel(days),
+        status: expiryRiskLabel(days, thresholds),
         lotDbStatus: lot.status,
         uiStatus,
       };
@@ -147,9 +156,9 @@ export class ExpiryService {
   }
 
   async getSummary() {
+    const thresholds = await this.getExpiryThresholds();
     const now = new Date();
-    const in30 = new Date(now.getTime() + 30 * DAY_MS);
-    const in90 = new Date(now.getTime() + 90 * DAY_MS);
+    const { inCritical, inWarning } = expiryThresholdDates(now, thresholds);
     const base = { inventoryRows: { some: { quantity: { gt: 0 } } } };
 
     const riskWhere: Prisma.LotWhereInput = {
@@ -157,7 +166,7 @@ export class ExpiryService {
       expiryDate: { not: null },
       OR: [
         { expiryDate: { lt: now } },
-        { expiryDate: { lte: in90 } },
+        { expiryDate: { lte: inWarning } },
         { status: { in: [LotStatus.QUARANTINE, LotStatus.BLOCKED] } },
       ],
     };
@@ -167,10 +176,10 @@ export class ExpiryService {
         where: { ...base, expiryDate: { lt: now } },
       }),
       this.prisma.lot.count({
-        where: { ...base, expiryDate: { gte: now, lte: in30 } },
+        where: { ...base, expiryDate: { gte: now, lte: inCritical } },
       }),
       this.prisma.lot.count({
-        where: { ...base, expiryDate: { gt: in30, lte: in90 } },
+        where: { ...base, expiryDate: { gt: inCritical, lte: inWarning } },
       }),
       this.prisma.lot.count({
         where: {
@@ -181,13 +190,26 @@ export class ExpiryService {
       this.prisma.lot.count({ where: riskWhere }),
     ]);
 
-    const critical = await this.countCriticalRisks();
+    const critical = await this.countCriticalRisks(now, thresholds);
 
-    return { expired, lt30, lt90, restricted, total, critical };
+    return {
+      expired,
+      lt30,
+      lt90,
+      restricted,
+      total,
+      critical,
+      expiryCriticalDays: thresholds.criticalDays,
+      expiryWarningDays: thresholds.warningDays,
+    };
   }
 
   /** Same predicate as Dashboard KPI and widget (`filter=critical`). */
-  countCriticalRisks(now = new Date()): Promise<number> {
-    return this.prisma.lot.count({ where: buildCriticalRiskLotWhere(now) });
+  countCriticalRisks(
+    now = new Date(),
+    thresholds?: ExpiryThresholds,
+  ): Promise<number> {
+    const t = thresholds ?? resolveExpiryThresholds();
+    return this.prisma.lot.count({ where: buildCriticalRiskLotWhere(now, t) });
   }
 }

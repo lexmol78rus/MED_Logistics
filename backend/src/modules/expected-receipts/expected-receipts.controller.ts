@@ -13,6 +13,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtUser } from '../../common/interfaces/jwt-user.interface';
 import { CreateExpectedReceiptDto } from './dto/create-expected-receipt.dto';
+import { ExpectedReceiptActionCommentDto } from './dto/expected-receipt-action-comment.dto';
 import { ExpectedReceiptsQueryDto } from './dto/expected-receipts-query.dto';
 import { UpdateExpectedReceiptDto } from './dto/update-expected-receipt.dto';
 import { ExpectedReceiptsService } from './expected-receipts.service';
@@ -51,14 +52,22 @@ export class ExpectedReceiptsController {
 
   @Roles(...MUTATE_ROLES)
   @Post(':id/close')
-  close(@Param('id') id: string, @CurrentUser() actor: JwtUser) {
-    return this.expectedReceipts.close(id, actor.email, actor.userId);
+  close(
+    @Param('id') id: string,
+    @Body() dto: ExpectedReceiptActionCommentDto,
+    @CurrentUser() actor: JwtUser,
+  ) {
+    return this.expectedReceipts.close(id, dto.comment, actor.email, actor.userId);
   }
 
   @Roles(...MUTATE_ROLES)
   @Post(':id/cancel')
-  cancel(@Param('id') id: string, @CurrentUser() actor: JwtUser) {
-    return this.expectedReceipts.cancel(id, actor.email, actor.userId);
+  cancel(
+    @Param('id') id: string,
+    @Body() dto: ExpectedReceiptActionCommentDto,
+    @CurrentUser() actor: JwtUser,
+  ) {
+    return this.expectedReceipts.cancel(id, dto.comment, actor.email, actor.userId);
   }
 
   @Roles(...MUTATE_ROLES)

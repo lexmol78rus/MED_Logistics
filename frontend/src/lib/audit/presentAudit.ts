@@ -215,6 +215,20 @@ export function buildAuditDescription(
     return `Статус партии: ${status}`;
   }
 
+  if (action === 'lot.void' && meta) {
+    const lotNumber = str(meta.lotNumber);
+    const comment = str(meta.comment);
+    const transfer = str(meta.transferToLotNumber);
+    return [
+      'Удалена ошибочная партия',
+      lotNumber ? `LOT ${lotNumber}` : '',
+      transfer ? `остаток перенесён в ${transfer}` : '',
+      comment ? `Причина: ${comment}` : '',
+    ]
+      .filter(Boolean)
+      .join('\n');
+  }
+
   if (action === 'settings.update') {
     return 'Изменены системные настройки склада';
   }

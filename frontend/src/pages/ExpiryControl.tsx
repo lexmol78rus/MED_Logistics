@@ -18,14 +18,18 @@ import {
   sharedGridOptions,
   stockQtyColumnDef,
 } from '../lib/agGrid/gridPreset';
-import { AlertCircle, Clock, RefreshCw, ShieldAlert, Download } from 'lucide-react';
+import { AlertCircle, Clock, RefreshCw, ShieldAlert, ShieldCheck, Download } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HoverHint } from '@/components/ui/HoverHint';
 import { toast } from 'sonner';
 import { ExpiryStatusBadge, matchesExpiryStatusFilter } from '../components/expiry/ExpiryStatusBadge';
 import { fetchExpiryAll, fetchExpirySummary, type ExpiryListItem } from '../lib/api/expiry';
 import { updateLotStatus } from '../lib/api/lots';
 import { downloadExport } from '../lib/export/download';
 import { canExport, canManageLotStatus } from '../lib/rbac/permissions';
+import { getExpiryThresholds } from '../lib/expiry/thresholds';
+import { LOT_ACTION_HINTS } from '../lib/lots/actionHints';
+import { loadSettings } from '../lib/settings/storage';
 import { useUserStore } from '../stores/userStore';
 
 type FilterKey = '' | 'expired' | 'lt30' | 'lt90';
@@ -53,7 +57,23 @@ export default function ExpiryControl() {
   const [manufacturer, setManufacturer] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [rowData, setRowData] = useState<ExpiryListItem[]>([]);
-  const [summary, setSummary] = useState({ expired: 0, lt30: 0, lt90: 0, restricted: 0, total: 0 });
+  const [summary, setSummary] = useState({
+    expired: 0,
+    lt30: 0,
+    lt90: 0,
+    restricted: 0,
+    total: 0,
+    expiryCriticalDays: loadSettings().expiryCriticalDays,
+    expiryWarningDays: loadSettings().expiryWarningDays,
+  });
+  const expiryThresholds = useMemo(
+    () =>
+      getExpiryThresholds({
+        expiryCriticalDays: summary.expiryCriticalDays ?? loadSettings().expiryCriticalDays,
+        expiryWarningDays: summary.expiryWarningDays ?? loadSettings().expiryWarningDays,
+      }),
+    [summary.expiryCriticalDays, summary.expiryWarningDays],
+  );
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -73,7 +93,12 @@ export default function ExpiryControl() {
         ? list.items.filter((row) => matchesExpiryStatusFilter(row, statusFilter))
         : list.items;
       setRowData(items);
-      setSummary(sum);
+      const cached = loadSettings();
+      setSummary({
+        ...sum,
+        expiryCriticalDays: sum.expiryCriticalDays ?? cached.expiryCriticalDays,
+        expiryWarningDays: sum.expiryWarningDays ?? cached.expiryWarningDays,
+      });
     } catch (err) {
       console.error('[ExpiryControl] load failed', err);
       setLoadError(true);
@@ -87,19 +112,43 @@ export default function ExpiryControl() {
     void load();
   }, [load]);
 
-  const handleStatus = async (row: ExpiryListItem, status: 'QUARANTINE' | 'BLOCKED') => {
-    setActionId(row.id);
-    try {
-      await updateLotStatus(row.id, { status });
-      toast.success(status === 'QUARANTINE' ? 'Партия в карантине' : 'Партия заблокирована');
-      void load();
-    } catch (err) {
-      console.error('[ExpiryControl] status update failed', err);
-      toast.error('Не удалось изменить статус партии');
-    } finally {
-      setActionId(null);
-    }
-  };
+  useEffect(() => {
+    const syncThresholdsFromCache = () => {
+      const cached = loadSettings();
+      setSummary((prev) => ({
+        ...prev,
+        expiryCriticalDays: cached.expiryCriticalDays,
+        expiryWarningDays: cached.expiryWarningDays,
+      }));
+    };
+    window.addEventListener('warehouse-settings-updated', syncThresholdsFromCache);
+    return () => window.removeEventListener('warehouse-settings-updated', syncThresholdsFromCache);
+  }, []);
+
+  const handleStatus = useCallback(
+    async (row: ExpiryListItem, status: 'QUARANTINE' | 'BLOCKED' | 'OK') => {
+      setActionId(row.id);
+      try {
+        await updateLotStatus(row.id, { status });
+        toast.success(
+          status === 'QUARANTINE'
+            ? 'Партия отправлена в карантин'
+            : status === 'BLOCKED'
+              ? 'Партия заблокирована'
+              : row.lotDbStatus === 'QUARANTINE'
+                ? 'Партия снята с карантина'
+                : 'Партия разблокирована',
+        );
+        void load();
+      } catch (err) {
+        console.error('[ExpiryControl] status update failed', err);
+        toast.error('Не удалось изменить статус партии');
+      } finally {
+        setActionId(null);
+      }
+    },
+    [load],
+  );
 
   const columnDefs = useMemo<ColDef<ExpiryListItem>[]>(
     () => [
@@ -126,11 +175,11 @@ export default function ExpiryControl() {
           'text-rose-600 font-bold': (p) => (p.value as number) < 0,
           'text-red-600 font-bold': (p) => {
             const v = p.value as number;
-            return v >= 0 && v < 30;
+            return v >= 0 && v < expiryThresholds.criticalDays;
           },
           'text-amber-600 font-bold': (p) => {
             const v = p.value as number;
-            return v >= 30 && v < 90;
+            return v >= expiryThresholds.criticalDays && v < expiryThresholds.warningDays;
           },
         },
       }),
@@ -163,9 +212,9 @@ export default function ExpiryControl() {
       stockQtyColumnDef('qty', { headerName: 'Остаток' }),
       compactColumnDef({
         headerName: 'Действия',
-        flex: 1.2,
-        minWidth: 200,
-        maxWidth: 280,
+        flex: 1.4,
+        minWidth: 240,
+        maxWidth: 320,
         sortable: false,
         filter: false,
         cellStyle: actionsCellStyle,
@@ -173,26 +222,49 @@ export default function ExpiryControl() {
           const row = params.data;
           if (!row) return null;
           const busy = actionId === row.id;
+          const isQuarantine = row.lotDbStatus === 'QUARANTINE';
+          const isBlocked = row.lotDbStatus === 'BLOCKED';
+          const canUnblock = isQuarantine || isBlocked;
           return (
             <div className="flex h-full w-full items-center gap-1">
               {showActions && (
                 <>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200"
-                    onClick={() => void handleStatus(row, 'QUARANTINE')}
-                  >
-                    Карантин
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-red-100 border border-red-300 rounded hover:bg-red-200"
-                    onClick={() => void handleStatus(row, 'BLOCKED')}
-                  >
-                    Блок
-                  </button>
+                  {canUnblock ? (
+                    <HoverHint tip={LOT_ACTION_HINTS.unblock} className="inline-flex">
+                      <button
+                        type="button"
+                        disabled={busy}
+                        className="inline-flex h-6 shrink-0 items-center gap-0.5 text-[9px] font-bold uppercase px-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100"
+                        onClick={() => void handleStatus(row, 'OK')}
+                      >
+                        <ShieldCheck className="w-3 h-3 shrink-0" />
+                        {isQuarantine ? 'Снять карантин' : 'Разблок.'}
+                      </button>
+                    </HoverHint>
+                  ) : (
+                    <>
+                      <HoverHint tip={LOT_ACTION_HINTS.quarantine} className="inline-flex">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-amber-100 border border-amber-300 rounded hover:bg-amber-200 disabled:opacity-50"
+                          onClick={() => void handleStatus(row, 'QUARANTINE')}
+                        >
+                          Карантин
+                        </button>
+                      </HoverHint>
+                      <HoverHint tip={LOT_ACTION_HINTS.block} className="inline-flex">
+                        <button
+                          type="button"
+                          disabled={busy}
+                          className="inline-flex h-6 shrink-0 items-center text-[9px] font-bold uppercase px-1.5 bg-red-100 border border-red-300 rounded hover:bg-red-200 disabled:opacity-50"
+                          onClick={() => void handleStatus(row, 'BLOCKED')}
+                        >
+                          Блок
+                        </button>
+                      </HoverHint>
+                    </>
+                  )}
                 </>
               )}
               <button
@@ -207,7 +279,7 @@ export default function ExpiryControl() {
         },
       }),
     ],
-    [actionId, navigate, showActions],
+    [actionId, handleStatus, navigate, showActions, expiryThresholds],
   );
 
   const defaultColDef = useMemo(
@@ -273,7 +345,7 @@ export default function ExpiryControl() {
           <div className="absolute top-0 left-0 bottom-0 w-1 bg-red-500" />
           <div className="flex items-center text-[11px] font-bold text-red-700 uppercase tracking-widest mb-1 ml-1.5">
             <AlertCircle className="w-3.5 h-3.5 mr-1" />
-            Критично (&lt; 30 дней)
+            Критично (&lt; {expiryThresholds.criticalDays} дней)
           </div>
           <div className="flex items-baseline gap-2 ml-1.5">
             <span className="text-2xl font-bold font-mono text-red-700 leading-none">{summary.lt30}</span>
@@ -283,7 +355,7 @@ export default function ExpiryControl() {
           <div className="absolute top-0 left-0 bottom-0 w-1 bg-amber-400" />
           <div className="flex items-center text-[11px] font-bold text-amber-700 uppercase tracking-widest mb-1 ml-1.5">
             <Clock className="w-3.5 h-3.5 mr-1" />
-            Внимание (30-90 дней)
+            Внимание ({expiryThresholds.criticalDays}–{expiryThresholds.warningDays} дней)
           </div>
           <div className="flex items-baseline gap-2 ml-1.5">
             <span className="text-2xl font-bold font-mono text-amber-700 leading-none">{summary.lt90}</span>
@@ -302,8 +374,11 @@ export default function ExpiryControl() {
         {[
           { key: '' as FilterKey, label: 'Все риски' },
           { key: 'expired' as FilterKey, label: 'Просрочено' },
-          { key: 'lt30' as FilterKey, label: '< 30 дней' },
-          { key: 'lt90' as FilterKey, label: '< 90 дней' },
+          { key: 'lt30' as FilterKey, label: `< ${expiryThresholds.criticalDays} дней` },
+          {
+            key: 'lt90' as FilterKey,
+            label: `< ${expiryThresholds.warningDays} дней`,
+          },
         ].map((f) => (
           <button
             key={f.key}

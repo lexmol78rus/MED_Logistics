@@ -130,7 +130,7 @@ export default function ProductDetails() {
         cellClass: 'font-mono text-[11px] font-bold text-slate-700',
       }, SHOW_WAREHOUSE_LOCATIONS ? 1 : 3),
       ...(SHOW_WAREHOUSE_LOCATIONS
-        ? [flexTextColumnDef({ field: 'lotArea' as const, headerName: 'АДРЕС ЯЧЕЙКИ', minWidth: 120, cellClass: 'text-xs' }, 2)]
+        ? [flexTextColumnDef({ field: 'lotArea' as const, headerName: 'АДРЕС ЯЧЕЙКИ', minWidth: 132, cellClass: 'text-xs' }, 2)]
         : []),
       stockQtyColumnDef('qty'),
       compactColumnDef({

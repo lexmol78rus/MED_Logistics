@@ -65,7 +65,7 @@ export function createExpectedReceipt(payload: {
 
 export function updateExpectedReceipt(
   id: string,
-  payload: { orderedQty?: number; comment?: string },
+  payload: { orderedQty?: number; comment?: string; reason: string },
 ) {
   return apiFetch<ExpectedReceipt>(`/expected-receipts/${id}`, {
     method: 'PATCH',
@@ -73,15 +73,17 @@ export function updateExpectedReceipt(
   });
 }
 
-export function closeExpectedReceipt(id: string) {
+export function closeExpectedReceipt(id: string, comment: string) {
   return apiFetch<ExpectedReceipt>(`/expected-receipts/${id}/close`, {
     method: 'POST',
+    body: JSON.stringify({ comment }),
   });
 }
 
-export function cancelExpectedReceipt(id: string) {
+export function cancelExpectedReceipt(id: string, comment: string) {
   return apiFetch<ExpectedReceipt>(`/expected-receipts/${id}/cancel`, {
     method: 'POST',
+    body: JSON.stringify({ comment }),
   });
 }
 

@@ -1,17 +1,28 @@
-import { Controller, Get, Header, Query, Res } from '@nestjs/common';
+import {
+  Controller,
+  ForbiddenException,
+  Get,
+  Header,
+  Query,
+  Res,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import type { Response } from 'express';
-import { ADMIN_MANAGER } from '../../common/constants/roles';
+import { ADMIN_MANAGER, ADMIN_MANAGER_OPERATOR } from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtUser } from '../../common/interfaces/jwt-user.interface';
 import { AuditLogService } from '../audit/audit-log.service';
+import { ShiftReportQueryDto } from './dto/shift-report-query.dto';
 import { ExportService } from './export.service';
+import { ShiftReportService } from './shift-report.service';
 
 @Controller('export')
 @Roles(...ADMIN_MANAGER)
 export class ExportController {
   constructor(
     private readonly exportService: ExportService,
+    private readonly shiftReportService: ShiftReportService,
     private readonly audit: AuditLogService,
   ) {}
 
@@ -65,5 +76,42 @@ export class ExportController {
     const ext = format === 'xlsx' ? 'xlsx' : 'csv';
     res.setHeader('Content-Disposition', `attachment; filename="expiry.${ext}"`);
     res.send(csv);
+  }
+
+  /** Отчёт смены — PDF по действиям текущего пользователя за выбранный период. */
+  @Get('shift-report')
+  @Roles(...ADMIN_MANAGER_OPERATOR)
+  async shiftReport(
+    @Query() query: ShiftReportQueryDto,
+    @CurrentUser() user: JwtUser,
+    @Res() res: Response,
+  ) {
+    const targetUserId = query.userId?.trim() || user.userId;
+    const forOtherEmployee = targetUserId !== user.userId;
+
+    if (forOtherEmployee && user.role !== UserRole.ADMIN) {
+      throw new ForbiddenException(
+        'Только администратор может формировать отчёт другого сотрудника',
+      );
+    }
+
+    const { buffer, filename } = await this.shiftReportService.generatePdf(
+      targetUserId,
+      query.from,
+      query.to,
+    );
+    await this.audit.write({
+      actorId: user.userId,
+      action: forOtherEmployee ? 'export.shift_report.admin' : 'export.shift_report',
+      entityType: 'export',
+      metadata: {
+        from: query.from,
+        to: query.to,
+        targetUserId,
+      },
+    });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(buffer);
   }
 }

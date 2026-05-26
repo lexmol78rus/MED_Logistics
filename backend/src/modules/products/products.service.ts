@@ -18,12 +18,15 @@ import {
   type ProductLotContext,
 } from '../../common/utils/inventory-status.util';
 import { resolveProductIdFromBarcode } from '../../common/barcode-lookup';
+import { resolveExpiryThresholds } from '../../common/utils/expiry-thresholds.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
 import { ExpectedReceiptsService } from '../expected-receipts/expected-receipts.service';
+import { SettingsService } from '../settings/settings.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
+import { PurgeAllProductsDto } from './dto/purge-all-products.dto';
 
 export type ProductLotSummary = {
   lot: string;
@@ -69,7 +72,16 @@ export class ProductsService {
     private readonly prisma: PrismaService,
     private readonly balance: InventoryBalanceService,
     private readonly expectedReceipts: ExpectedReceiptsService,
+    private readonly settings: SettingsService,
   ) {}
+
+  private async getExpiryThresholds() {
+    const cfg = await this.settings.get();
+    return resolveExpiryThresholds({
+      warningDays: cfg.expiryWarningDays,
+      criticalDays: cfg.expiryCriticalDays,
+    });
+  }
 
   async list(query: ProductsQueryDto): Promise<PaginatedResponse<ProductListItem>> {
     const page = query.page ?? 1;
@@ -120,7 +132,8 @@ export class ProductsService {
       },
     });
 
-    let items = await Promise.all(products.map((p) => this.toListItem(p)));
+    const thresholds = await this.getExpiryThresholds();
+    let items = await Promise.all(products.map((p) => this.toListItem(p, thresholds)));
 
     if (query.lowStock === true) {
       items = items.filter((i) => i.lowStock);
@@ -156,7 +169,8 @@ export class ProductsService {
       },
     });
     if (!product) throw new NotFoundException('Товар не найден');
-    const item = await this.toListItem(product);
+    const thresholds = await this.getExpiryThresholds();
+    const item = await this.toListItem(product, thresholds);
     return { ...item, category: null, storageCond: null };
   }
 
@@ -450,6 +464,69 @@ export class ProductsService {
     return this.getById(id);
   }
 
+  async purgeAllProducts(dto: PurgeAllProductsDto, actorEmail?: string) {
+    const phrase = (dto.confirm ?? '').trim();
+    const expected = 'DELETE_ALL_PRODUCTS';
+    if (phrase !== expected) {
+      throw new ConflictException(
+        `Неверное подтверждение. Для выполнения передайте confirm="${expected}"`,
+      );
+    }
+
+    const counts = {
+      products: await this.prisma.product.count(),
+      lots: await this.prisma.lot.count(),
+      inventoryItems: await this.prisma.inventoryItem.count(),
+      movements: await this.prisma.stockMovement.count(),
+      expectedReceipts: await this.prisma.expectedReceipt.count(),
+      expectedReceiptEvents: await this.prisma.expectedReceiptEvent.count(),
+      registrationCertificates: await this.prisma.productRegistrationCertificate.count(),
+      barcodeRecords: await this.prisma.barcodeRecord.count(),
+    };
+
+    if (dto.dryRun === true) {
+      return { dryRun: true, counts };
+    }
+
+    this.logger.warn(
+      `PURGE ALL PRODUCTS initiated by ${actorEmail ?? 'unknown'} counts=${JSON.stringify(counts)}`,
+    );
+
+    const deleted = await this.prisma.$transaction(async (tx) => {
+      // Products relations are mostly onDelete: Cascade, but barcode records are onDelete: SetNull.
+      // We delete barcode records explicitly to avoid future barcode conflicts.
+      const barcodeDel = await tx.barcodeRecord.deleteMany({});
+      const productDel = await tx.product.deleteMany({});
+
+      await tx.auditLog.create({
+        data: {
+          action: 'product.purge_all',
+          entityType: 'product',
+          entityId: null,
+          metadata: {
+            actorEmail: actorEmail ?? null,
+            deleted: {
+              products: productDel.count,
+              barcodeRecords: barcodeDel.count,
+            },
+            before: counts,
+          },
+        },
+      });
+
+      return {
+        products: productDel.count,
+        barcodeRecords: barcodeDel.count,
+      };
+    });
+
+    return {
+      dryRun: false,
+      before: counts,
+      deleted,
+    };
+  }
+
   private resolveWarehouseLocation(
     rows: { location: string | null }[],
   ): string | null {
@@ -486,6 +563,7 @@ export class ProductsService {
       }[];
       inventoryRows: { quantity: Prisma.Decimal }[];
     },
+    thresholds = resolveExpiryThresholds(),
   ): Promise<ProductListItem> {
     const qty = product.inventoryRows.reduce(
       (sum, row) => sum + decimalToNumber(row.quantity),
@@ -515,7 +593,7 @@ export class ProductsService {
         lot: ctx.lotNumber,
         qty: ctx.totalQty,
         expiryDate: ctx.expiryDate?.toISOString().slice(0, 10) ?? null,
-        status: computeLotUiStatus(ctx.status, ctx.expiryDate, ctx.totalQty),
+        status: computeLotUiStatus(ctx.status, ctx.expiryDate, ctx.totalQty, thresholds),
         location: source
           ? this.resolveWarehouseLocation(source.inventoryRows)
           : null,
@@ -535,7 +613,7 @@ export class ProductsService {
 
     return {
       id: product.id,
-      status: computeProductStatus(bal.availableQuantity, nearestExpiry),
+      status: computeProductStatus(bal.availableQuantity, nearestExpiry, thresholds),
       name: product.name,
       ref: product.sku,
       lot: primaryLot,

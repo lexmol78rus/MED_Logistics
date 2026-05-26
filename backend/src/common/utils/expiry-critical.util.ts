@@ -1,25 +1,36 @@
 import { LotStatus, Prisma } from '@prisma/client';
+import {
+  expiryThresholdDates,
+  resolveExpiryThresholds,
+  type ExpiryThresholds,
+} from './expiry-thresholds.util';
 
 export const EXPIRY_DAY_MS = 24 * 60 * 60 * 1000;
 
-/** Thresholds for dashboard / expiry "critical" bucket (expired + lt30 + blocked). */
-export function criticalRiskThresholds(now = new Date()) {
-  const in30 = new Date(now.getTime() + 30 * EXPIRY_DAY_MS);
-  return { now, in30 };
+/** Thresholds for dashboard / expiry "critical" bucket (expired + critical window + blocked). */
+export function criticalRiskThresholds(
+  now = new Date(),
+  thresholds: ExpiryThresholds = resolveExpiryThresholds(),
+) {
+  const { now: n, inCritical } = expiryThresholdDates(now, thresholds);
+  return { now: n, inCritical };
 }
 
 /**
  * Lots that must appear in Dashboard "Критические сроки" and match the highest-risk
- * rows on Контроль сроков: Просрочено, Критичный (<30d), Блок.
+ * rows on Контроль сроков: Просрочено, Критичный, Блок.
  */
-export function buildCriticalRiskLotWhere(now = new Date()): Prisma.LotWhereInput {
-  const { now: n, in30 } = criticalRiskThresholds(now);
+export function buildCriticalRiskLotWhere(
+  now = new Date(),
+  thresholds: ExpiryThresholds = resolveExpiryThresholds(),
+): Prisma.LotWhereInput {
+  const { now: n, inCritical } = criticalRiskThresholds(now, thresholds);
   return {
     expiryDate: { not: null },
     inventoryRows: { some: { quantity: { gt: 0 } } },
     OR: [
       { expiryDate: { lt: n } },
-      { expiryDate: { gte: n, lte: in30 } },
+      { expiryDate: { gte: n, lte: inCritical } },
       { status: LotStatus.BLOCKED },
     ],
   };

@@ -43,6 +43,8 @@ services:
       JWT_REFRESH_EXPIRES_IN: 7d
       THROTTLE_TTL: "60"
       THROTTLE_LIMIT: "100"
+      # Dangerous operation toggle (keep false by default)
+      ALLOW_NOMENCLATURE_PURGE: ${ALLOW_NOMENCLATURE_PURGE:-false}
     healthcheck:
       test:
         [

@@ -16,8 +16,8 @@ import {
   ExpiryStatusBadge,
   resolveExpiryStatusVariant,
 } from '../components/expiry/ExpiryStatusBadge';
-import { downloadExport } from '../lib/export/download';
-import { canExport } from '../lib/rbac/permissions';
+import ShiftReportDialog from '../components/dashboard/ShiftReportDialog';
+import { canShiftReport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { ApiError } from '../lib/api/client';
 import { loadSettings } from '../lib/settings/storage';
@@ -34,6 +34,7 @@ export default function Dashboard() {
   const [showAllCritical, setShowAllCritical] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [shiftReportOpen, setShiftReportOpen] = useState(false);
 
   const load = useCallback(async (showSuccessToast = false) => {
     setRefreshing(true);
@@ -71,15 +72,6 @@ export default function Dashboard() {
   }, [load]);
 
   const handleRefresh = () => void load(true);
-
-  const handleShiftReport = async () => {
-    try {
-      await downloadExport('movements', { today: true });
-      toast.success('Отчёт смены загружен');
-    } catch {
-      toast.error('Ошибка экспорта');
-    }
-  };
 
   const criticalCount = data?.criticalExpiryCount ?? criticalLots.length;
 
@@ -124,6 +116,8 @@ export default function Dashboard() {
     : [];
 
   return (
+    <>
+    <ShiftReportDialog open={shiftReportOpen} onClose={() => setShiftReportOpen(false)} />
     <div className="h-full flex flex-col gap-4 max-w-[1400px] mx-auto">
       <div className="flex items-center justify-between bg-white p-3 rounded shadow-sm border border-slate-300">
         <div>
@@ -141,11 +135,11 @@ export default function Dashboard() {
             <RefreshCcw className={`w-3.5 h-3.5 mr-1.5 ${refreshing ? 'animate-spin' : ''}`} />
             Обновить
           </Button>
-          {canExport(userRole) && (
+          {canShiftReport(userRole) && (
             <Button
               size="sm"
               className="h-8 text-xs font-semibold bg-blue-700 hover:bg-blue-800"
-              onClick={() => void handleShiftReport()}
+              onClick={() => setShiftReportOpen(true)}
               disabled={refreshing}
             >
               <Download className="w-3.5 h-3.5 mr-1.5" />
@@ -309,5 +303,6 @@ export default function Dashboard() {
         </>
       )}
     </div>
+    </>
   );
 }

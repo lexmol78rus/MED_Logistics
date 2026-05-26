@@ -4,6 +4,7 @@ import {
   ArrowRightLeft,
   CalendarClock,
   ChevronRight,
+  History,
   LayoutGrid,
   ScanLine,
   Settings2,
@@ -18,6 +19,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { toast } from 'sonner';
+import { AdminShiftReportCard } from '../components/settings/AdminShiftReportCard';
 import { MailSettingsSection } from '../components/settings/MailSettingsSection';
 import {
   SettingsNumberField,
@@ -124,6 +126,31 @@ export default function Settings() {
           Склад · MED Logistics
         </span>
       </header>
+
+      <AdminShiftReportCard />
+
+      <Card className={settingsCardClass}>
+        <CardHeader className={settingsCardHeaderClass}>
+          <div className="flex items-center gap-2">
+            <History className="h-4 w-4 text-slate-500" />
+            <CardTitle className="text-sm font-semibold text-slate-900">
+              Архив действий пользователей
+            </CardTitle>
+          </div>
+          <CardDescription className="text-xs text-slate-500">
+            Срок хранения записей журнала (вход, настройки, FEFO и др.). Влияет на отчёты смены и
+            автоматическую очистку. Сохраняется кнопкой «Сохранить склад» ниже.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className={settingsCardBodyClass}>
+          <SettingsNumberField
+            label="Хранить историю (дней)"
+            value={settings.activityHistoryRetentionDays}
+            onChange={(v) => update('activityHistoryRetentionDays', v)}
+            id="activity-history-retention-days"
+          />
+        </CardContent>
+      </Card>
 
       <Card className={settingsCardClass}>
         <CardContent className={`${settingsCardBodyClass} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>

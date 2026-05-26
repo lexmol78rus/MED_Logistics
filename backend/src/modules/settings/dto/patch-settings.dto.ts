@@ -62,4 +62,10 @@ export class PatchSettingsDto {
   @IsOptional()
   @IsBoolean()
   uiAutoRefreshDashboard?: boolean;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(1)
+  @Max(3650)
+  activityHistoryRetentionDays?: number;
 }

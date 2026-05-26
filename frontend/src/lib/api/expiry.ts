@@ -23,6 +23,8 @@ export type ExpirySummary = {
   restricted: number;
   total: number;
   critical: number;
+  expiryCriticalDays?: number;
+  expiryWarningDays?: number;
 };
 
 export type ExpiryQuery = {

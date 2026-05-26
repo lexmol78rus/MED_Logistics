@@ -14,6 +14,9 @@ import {
 import { ApiError } from '../../lib/api/client';
 import { canReceive, type UserRole } from '../../lib/rbac/permissions';
 import { TruncatedText } from '../ui/TruncatedText';
+import ExpectedReceiptCommentDialog, {
+  type ExpectedReceiptCommentAction,
+} from './ExpectedReceiptCommentDialog';
 
 const STATUS_COLORS: Record<ExpectedReceiptStatus, string> = {
   ORDERED: 'text-blue-700 bg-blue-50 border-blue-200',
@@ -37,8 +40,13 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
   const [editingId, setEditingId] = useState<string | null>(null);
   const [qty, setQty] = useState('');
   const [comment, setComment] = useState('');
+  const [editReason, setEditReason] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [actionDialog, setActionDialog] = useState<{
+    id: string;
+    action: ExpectedReceiptCommentAction;
+  } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -61,6 +69,7 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
     setEditingId(null);
     setQty('');
     setComment('');
+    setEditReason('');
   };
 
   const openCreate = () => {
@@ -74,12 +83,18 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
     setEditingId(row.id);
     setQty(String(row.orderedQty));
     setComment(row.comment ?? '');
+    setEditReason('');
   };
 
   const handleSubmit = async () => {
     const orderedQty = Number(qty);
     if (!Number.isFinite(orderedQty) || orderedQty <= 0) {
       toast.error('Укажите корректное количество');
+      return;
+    }
+
+    if (formMode === 'edit' && editReason.trim().length < 2) {
+      toast.error('Укажите причину изменения (не короче 2 символов)');
       return;
     }
 
@@ -95,6 +110,7 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
       } else if (formMode === 'edit' && editingId) {
         await updateExpectedReceipt(editingId, {
           orderedQty,
+          reason: editReason.trim(),
           comment: comment.trim() || undefined,
         });
         toast.success('Ожидание обновлено');
@@ -108,24 +124,16 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
     }
   };
 
-  const handleClose = async (id: string) => {
-    try {
-      await closeExpectedReceipt(id);
-      toast.success('Ожидание закрыто');
-      await load();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка закрытия');
+  const handleActionConfirm = async (comment: string) => {
+    if (!actionDialog) return;
+    if (actionDialog.action === 'close') {
+      await closeExpectedReceipt(actionDialog.id, comment);
+      toast.success('Предзаказ подтверждён');
+    } else {
+      await cancelExpectedReceipt(actionDialog.id, comment);
+      toast.success('Предзаказ отменён');
     }
-  };
-
-  const handleCancel = async (id: string) => {
-    try {
-      await cancelExpectedReceipt(id);
-      toast.success('Ожидание отменено');
-      await load();
-    } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка отмены');
-    }
+    await load();
   };
 
   const formatDate = (iso: string) =>
@@ -165,7 +173,9 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
           <p className="text-[10px] font-bold uppercase text-slate-600 tracking-wider">
             {formMode === 'create' ? 'Новое ожидание' : 'Редактирование'}
           </p>
-          <div className="grid grid-cols-2 gap-3 max-w-lg">
+          <div
+            className={`grid gap-3 max-w-2xl ${formMode === 'edit' ? 'grid-cols-3' : 'grid-cols-2'}`}
+          >
             <div>
               <label className="text-[10px] font-bold text-slate-500 uppercase">Количество *</label>
               <input
@@ -186,6 +196,19 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
                 className="mt-1 w-full h-9 px-2 border border-slate-300 rounded text-sm"
               />
             </div>
+            {formMode === 'edit' && (
+              <div>
+                <label className="text-[10px] font-bold text-slate-500 uppercase">
+                  Причина изменения *
+                </label>
+                <input
+                  value={editReason}
+                  onChange={(e) => setEditReason(e.target.value)}
+                  placeholder="Клиент попросил больше..."
+                  className="mt-1 w-full h-9 px-2 border border-slate-300 rounded text-sm"
+                />
+              </div>
+            )}
           </div>
           <div className="flex gap-2">
             <Button
@@ -268,9 +291,9 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
                             </button>
                             <button
                               type="button"
-                              title="Закрыть"
+                              title="Подтвердить"
                               className="p-1 rounded hover:bg-emerald-100 text-emerald-600"
-                              onClick={() => void handleClose(row.id)}
+                              onClick={() => setActionDialog({ id: row.id, action: 'close' })}
                             >
                               <CheckCircle2 className="w-3.5 h-3.5" />
                             </button>
@@ -278,7 +301,7 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
                               type="button"
                               title="Отменить"
                               className="p-1 rounded hover:bg-red-100 text-red-600"
-                              onClick={() => void handleCancel(row.id)}
+                              onClick={() => setActionDialog({ id: row.id, action: 'cancel' })}
                             >
                               <XCircle className="w-3.5 h-3.5" />
                             </button>
@@ -318,6 +341,13 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
           </table>
         )}
       </div>
+
+      <ExpectedReceiptCommentDialog
+        open={actionDialog != null}
+        action={actionDialog?.action ?? 'close'}
+        onClose={() => setActionDialog(null)}
+        onConfirm={handleActionConfirm}
+      />
     </div>
   );
 }

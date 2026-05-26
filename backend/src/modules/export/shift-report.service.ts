@@ -33,6 +33,25 @@ const ROLE_LABELS: Record<UserRole, string> = {
   VIEWER: 'Наблюдатель',
 };
 
+/** Человекочитаемые подписи полей из settings.update (metadata.changes). */
+const SETTINGS_CHANGE_LABELS: Record<string, string> = {
+  warehouseName: 'Название склада',
+  warehouseCode: 'Код склада',
+  fefoEnabled: 'FEFO',
+  fefoStrict: 'Строгий FEFO',
+  expiryWarningDays: 'Предупр. по сроку (дн.)',
+  expiryCriticalDays: 'Критич. по сроку (дн.)',
+  scannerAutoFocus: 'Автофокус сканера',
+  scannerDebounceMs: 'Задержка сканера (мс)',
+  scannerSoundEnabled: 'Звук сканера',
+  uiCompactMode: 'Компактный интерфейс',
+  uiShowFefoHints: 'Подсказки FEFO',
+  uiAnimations: 'Анимации',
+  uiAutoRefreshDashboard: 'Автообновление дашборда',
+  notificationEnabled: 'Уведомления',
+  activityHistoryRetentionDays: 'Срок архива (дн.)',
+};
+
 @Injectable()
 export class ShiftReportService {
   private readonly logger = new Logger(ShiftReportService.name);
@@ -41,6 +60,41 @@ export class ShiftReportService {
     private readonly prisma: PrismaService,
     private readonly settings: SettingsService,
   ) {}
+
+  private asRecord(value: unknown): Record<string, unknown> | null {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      return value as Record<string, unknown>;
+    }
+    return null;
+  }
+
+  private formatChangeValue(value: unknown): string {
+    if (value == null) return '—';
+    if (typeof value === 'boolean') return value ? 'да' : 'нет';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number') return String(value);
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+
+  private buildSettingsUpdateDetails(metadata: unknown): string {
+    const meta = this.asRecord(metadata);
+    const changes = this.asRecord(meta?.changes);
+    if (!changes) return '';
+    const keys = Object.keys(changes).filter(Boolean).sort();
+    if (keys.length === 0) return '';
+
+    const parts: string[] = [];
+    for (const key of keys.slice(0, 4)) {
+      const label = SETTINGS_CHANGE_LABELS[key] ?? key;
+      parts.push(`${label}: ${this.formatChangeValue(changes[key])}`);
+    }
+    const rest = keys.length - parts.length;
+    return `Настройки: ${parts.join('; ')}${rest > 0 ? `; +${rest}` : ''}`;
+  }
 
   private async resolveArchiveRetentionDays(): Promise<number> {
     const sys = await this.settings.get();
@@ -126,6 +180,39 @@ export class ShiftReportService {
 
     const events: ShiftReportPdfEvent[] = [];
 
+    const fefoRows = auditRows.filter((r) => r.action === 'inventory.fefo.violation');
+    const fefoProductIds = new Set<string>();
+    const fefoLotIds = new Set<string>();
+    for (const row of fefoRows) {
+      if (row.entityId) fefoProductIds.add(row.entityId);
+      const meta = this.asRecord(row.metadata);
+      const expectedLotId = typeof meta?.expectedLotId === 'string' ? meta.expectedLotId : '';
+      const actualLotId = typeof meta?.actualLotId === 'string' ? meta.actualLotId : '';
+      if (expectedLotId) fefoLotIds.add(expectedLotId);
+      if (actualLotId) fefoLotIds.add(actualLotId);
+    }
+
+    const [fefoProducts, fefoLots] =
+      fefoProductIds.size > 0 || fefoLotIds.size > 0
+        ? await Promise.all([
+            fefoProductIds.size > 0
+              ? this.prisma.product.findMany({
+                  where: { id: { in: [...fefoProductIds] } },
+                  select: { id: true, sku: true, name: true },
+                })
+              : Promise.resolve([]),
+            fefoLotIds.size > 0
+              ? this.prisma.lot.findMany({
+                  where: { id: { in: [...fefoLotIds] } },
+                  select: { id: true, lotNumber: true },
+                })
+              : Promise.resolve([]),
+          ])
+        : [[], []];
+
+    const fefoProductById = new Map(fefoProducts.map((p) => [p.id, p]));
+    const fefoLotNumberById = new Map(fefoLots.map((l) => [l.id, l.lotNumber]));
+
     for (const m of movements) {
       const qtyNum = decimalToNumber(m.quantity);
       const isReceipt =
@@ -170,6 +257,60 @@ export class ShiftReportService {
 
     for (const row of auditRows) {
       const typeLabel = resolveAuditActionLabel(row.action);
+
+      // Для ряда действий аудита enrich-им метаданные, иначе в PDF получаются пустые строки.
+      if (row.action === 'settings.update') {
+        const details = this.buildSettingsUpdateDetails(row.metadata);
+        if (!details) continue;
+        events.push({
+          at: row.createdAt,
+          source: 'audit',
+          typeLabel,
+          document: '—',
+          ref: '',
+          product: '',
+          lot: '',
+          qty: '',
+          details,
+        });
+        continue;
+      }
+
+      if (row.action === 'inventory.fefo.violation') {
+        const meta = this.asRecord(row.metadata);
+        const expectedLotId = typeof meta?.expectedLotId === 'string' ? meta.expectedLotId : '';
+        const actualLotId = typeof meta?.actualLotId === 'string' ? meta.actualLotId : '';
+        if (!row.entityId || (!expectedLotId && !actualLotId)) continue;
+
+        const product = fefoProductById.get(row.entityId);
+        const expectedLotNumber = expectedLotId
+          ? (fefoLotNumberById.get(expectedLotId) ?? expectedLotId)
+          : '';
+        const actualLotNumber = actualLotId
+          ? (fefoLotNumberById.get(actualLotId) ?? actualLotId)
+          : '';
+
+        const details = [
+          expectedLotNumber && `Ожид.: ${expectedLotNumber}`,
+          actualLotNumber && `Факт.: ${actualLotNumber}`,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+
+        events.push({
+          at: row.createdAt,
+          source: 'audit',
+          typeLabel,
+          document: '—',
+          ref: product?.sku ?? '',
+          product: product?.name ?? '',
+          lot: actualLotNumber,
+          qty: '',
+          details: details || typeLabel,
+        });
+        continue;
+      }
+
       const auditFields = buildAuditPdfRow(row.action, row.entityId, row.metadata);
       events.push({
         at: row.createdAt,

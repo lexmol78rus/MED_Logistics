@@ -1,15 +1,19 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
+@import "./styles/shipment-print.css";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "ag-grid-community/styles/ag-grid.css";
 @import "ag-grid-community/styles/ag-theme-quartz.css";
 
-/* Expiry / Movements: badge cells must not clip */
+/* Expiry / audit: pill badges must not clip vertically */
 .expiry-control-grid .ag-cell,
-.movements-grid .ag-cell,
 .audit-grid .ag-cell {
   overflow: visible;
+  line-height: normal;
+}
+
+.movements-grid .ag-cell {
   line-height: normal;
 }
 
@@ -54,6 +58,56 @@
 .audit-grid .audit-type-cell,
 .audit-grid .audit-actor-cell {
   min-height: 100%;
+}
+
+/* Movements grid: clip text/badge cells; type / expiry / RU may bleed slightly */
+.movements-grid.compact-data-grid .ag-cell {
+  overflow: hidden;
+}
+
+.movements-grid.compact-data-grid .ag-cell-wrapper {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.movements-grid.compact-data-grid .ag-cell-value {
+  min-width: 0;
+  overflow: hidden;
+}
+
+.movements-grid.compact-data-grid .ag-cell-renderer {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.movements-grid.compact-data-grid .ag-cell-badge .ag-cell-wrapper,
+.movements-grid.compact-data-grid .ag-cell-badge .ag-cell-renderer {
+  overflow: hidden;
+}
+
+.movements-grid.compact-data-grid .movement-type-cell,
+.movements-grid.compact-data-grid .movement-ru-cell,
+.movements-grid.compact-data-grid .movement-expiry-cell {
+  overflow: visible !important;
+}
+
+.movements-grid.compact-data-grid .movement-type-cell .ag-cell-wrapper,
+.movements-grid.compact-data-grid .movement-type-cell .ag-cell-value,
+.movements-grid.compact-data-grid .movement-ru-cell .ag-cell-wrapper,
+.movements-grid.compact-data-grid .movement-ru-cell .ag-cell-value,
+.movements-grid.compact-data-grid .movement-expiry-cell .ag-cell-wrapper,
+.movements-grid.compact-data-grid .movement-expiry-cell .ag-cell-renderer {
+  overflow: visible;
+}
+
+.movements-grid.compact-data-grid .ag-cell-truncate .ag-cell-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
 }
 
 /* Shared compact data grid (products, lots, movements, expiry-control) */
@@ -264,6 +318,14 @@
 .movement-group-detail .movement-detail-qty.movement-qty-neutral {
   color: #475569;
   font-weight: 600;
+}
+
+.movement-group-detail .movement-type-badge {
+  max-width: 5.5rem;
+}
+
+.movement-group-detail-card {
+  overflow: hidden;
 }
 
 .compact-data-grid .ag-header-cell.ag-header-numeric .ag-header-cell-label,
@@ -774,4 +836,62 @@
   html {
     @apply font-sans;
     }
+}
+
+/* Колокольчик уведомлений */
+@keyframes notification-bell-wiggle {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12% {
+    transform: rotate(14deg);
+  }
+  24% {
+    transform: rotate(-12deg);
+  }
+  36% {
+    transform: rotate(8deg);
+  }
+  48% {
+    transform: rotate(-6deg);
+  }
+  60% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes notification-bell-badge-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 2px 8px rgb(220 38 38 / 0.45);
+  }
+  50% {
+    transform: scale(1.08);
+    box-shadow: 0 2px 14px rgb(220 38 38 / 0.65);
+  }
+}
+
+@keyframes notification-bell-ring-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.notification-bell-icon--alert {
+  transform-origin: top center;
+  animation: notification-bell-wiggle 2.8s ease-in-out infinite;
+}
+
+.notification-bell-badge--pulse {
+  animation: notification-bell-badge-pulse 1.4s ease-in-out infinite;
+}
+
+.notification-bell-ring {
+  animation: notification-bell-ring-glow 1.6s ease-in-out infinite;
 }

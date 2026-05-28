@@ -116,7 +116,7 @@ export const useWriteoffDraftStore = create<WriteoffDraftState>()(
         cart: state.cart,
         form: state.form,
       }),
-      version: 1,
+      version: 2,
     },
   ),
 );

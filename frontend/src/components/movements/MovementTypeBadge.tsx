@@ -1,11 +1,10 @@
 import { HoverHint } from '@/components/ui/HoverHint';
 
 const BADGE_BASE_CLASS =
-  'movement-type-badge inline-flex h-[22px] shrink-0 items-center justify-center rounded-full border px-1.5 text-[11px] font-bold uppercase leading-none whitespace-nowrap';
+  'movement-type-badge inline-flex h-[22px] max-w-full shrink-0 items-center justify-center rounded-full border px-1.5 text-[11px] font-bold uppercase leading-none truncate';
 
 function resolveMovementBadge(type: string): { label: string; colorClass: string } {
   const upper = type.toUpperCase();
-  const isWriteoff = upper.startsWith('СПИСАНО');
 
   if (upper.includes('КОРРЕКТИРОВКА СПИСАНИЯ')) {
     return {
@@ -14,7 +13,15 @@ function resolveMovementBadge(type: string): { label: string; colorClass: string
     };
   }
 
-  if (isWriteoff) {
+  /** Отгрузка → списано (не начинается с «Списано», иначе в default уходила вся строка). */
+  if (upper.includes('ОТГРУЗКА') && upper.includes('СПИСАНО')) {
+    return {
+      label: 'ОТГРУЗКА',
+      colorClass: 'bg-violet-50 text-violet-800 border-violet-200',
+    };
+  }
+
+  if (upper.includes('СПИСАНО')) {
     return {
       label: 'СПИСАНО',
       colorClass: 'bg-red-50 text-red-700 border-red-200',
@@ -44,14 +51,27 @@ function resolveMovementBadge(type: string): { label: string; colorClass: string
   }
 }
 
-export function MovementTypeBadge({ type }: { type: string }) {
+export function MovementTypeBadge({
+  type,
+  inline = false,
+}: {
+  type: string;
+  /** В карточке раскрытой группы — без растягивания на всю ширину ячейки. */
+  inline?: boolean;
+}) {
   const { label, colorClass } = resolveMovementBadge(type);
 
+  const badge = (
+    <HoverHint tip={type} className={`${BADGE_BASE_CLASS} ${colorClass}`}>
+      {label}
+    </HoverHint>
+  );
+
+  if (inline) return badge;
+
   return (
-    <div className="movement-type-cell flex h-full w-full items-center justify-center">
-      <HoverHint tip={type} className={`${BADGE_BASE_CLASS} ${colorClass}`}>
-        {label}
-      </HoverHint>
+    <div className="movement-type-cell flex h-full w-full min-w-0 items-center justify-center">
+      {badge}
     </div>
   );
 }

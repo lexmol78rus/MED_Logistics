@@ -61,8 +61,8 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
               </span>
             </div>
             {header.destination && (
-              <div className="pt-0.5">
-                <WriteOffDestinationBadge destination={header.destination} />
+              <div className="max-w-full min-w-0 pt-0.5">
+                <WriteOffDestinationBadge destination={header.destination} showCommentLine />
               </div>
             )}
           </div>
@@ -97,22 +97,21 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
               key={item.id}
               className="movement-group-detail-card rounded-lg border border-slate-200/90 bg-white px-3 py-2.5 shadow-sm"
             >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-2">
+                <div className="min-w-0">
                   <div className="truncate text-xs font-semibold text-slate-800">{item.productName}</div>
                   <div className="mt-1 flex flex-wrap items-center gap-x-2.5 gap-y-1 font-mono text-[10px] text-slate-500">
-                    <span>REF {item.ref}</span>
-                    <span>LOT {item.lot ?? '—'}</span>
-                    <span className="inline-flex items-center gap-1 font-sans">
-                      <span className="text-slate-400">Срок</span>
+                    <span className="shrink-0">REF {item.ref}</span>
+                    <span className="shrink-0">LOT {item.lot ?? '—'}</span>
+                    <span className="inline-flex min-w-0 items-center gap-1 font-sans">
+                      <span className="shrink-0 text-slate-400">Срок</span>
                       <MovementExpiryLabel expiryDate={item.expiryDate} variant="inline" />
                     </span>
                   </div>
                 </div>
-                <div className="flex shrink-0 items-start gap-1.5">
+                <div className="flex shrink-0 flex-col items-end gap-1.5">
                   <MovementRuButton productId={item.productId} />
-                  <div className="flex flex-col items-end gap-1">
-                  <MovementTypeBadge type={item.type} />
+                  <MovementTypeBadge type={item.type} inline />
                   {mergedQty ? (
                     <MovementMergedQtyDisplay display={mergedQty} />
                   ) : (
@@ -122,19 +121,20 @@ export function MovementGroupDetailPanel({ items, canEdit, onEdit, formatOperato
                       {item.qty}
                     </span>
                   )}
-                  </div>
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2 text-[10px] text-slate-500">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-1">
                   {!header.destination &&
                     (item.destination ? (
-                      <WriteOffDestinationBadge destination={item.destination} />
+                      <span className="max-w-full min-w-0 shrink">
+                        <WriteOffDestinationBadge destination={item.destination} />
+                      </span>
                     ) : (
                       <span className="text-slate-400">—</span>
                     ))}
-                  <span>{operatorLabel(item.user)}</span>
-                  <span className="font-mono text-slate-400">{item.id}</span>
+                  <span className="shrink-0">{operatorLabel(item.user)}</span>
+                  <span className="min-w-0 truncate font-mono text-slate-400">{item.id}</span>
                 </div>
                 <MovementCorrectionBadges item={item} compact formatOperator={formatOperator} />
               </div>

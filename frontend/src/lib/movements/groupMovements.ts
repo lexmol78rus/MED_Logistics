@@ -19,7 +19,8 @@ function getGroupKey(item: MovementListItem): string {
 
 function groupTitle(type: string): string {
   const upper = type.toUpperCase();
-  if (upper.startsWith('СПИСАНО') || type === 'РАСХОД') return 'Списание товаров';
+  if (upper.includes('ОТГРУЗКА') && upper.includes('СПИСАНО')) return 'Списание по отгрузке';
+  if (upper.includes('СПИСАНО') || type === 'РАСХОД') return 'Списание товаров';
   if (type === 'ПРИХОД' || upper.includes('ОПРИХОД')) return 'Приход товаров';
   if (type === 'КАРАНТИН') return 'Карантин';
   if (type === 'КОРРЕКТИРОВКА') return 'Корректировка';

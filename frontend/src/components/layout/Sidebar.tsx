@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from 'react-router-dom';
+import { useMemo, useState } from 'react';
 import {
   LayoutDashboard,
   Package,
@@ -13,6 +14,9 @@ import {
   Users,
   ScrollText,
   Terminal,
+  Truck,
+  Handshake,
+  ChevronDown,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { logoutApi } from '../../lib/api/auth';
@@ -21,7 +25,15 @@ import { userInitials } from '../../lib/api/users';
 import { useAuthStore } from '../../stores/authStore';
 import { useUserStore } from '../../stores/userStore';
 
-const navItems = [
+type NavItem = {
+  name: string;
+  path?: string;
+  icon: React.ComponentType<{ className?: string }>;
+  section: 'ops' | 'compliance' | 'system';
+  children?: { name: string; path: string }[];
+};
+
+const navItems: NavItem[] = [
   { name: 'Панель управления', path: '/dashboard', icon: LayoutDashboard, section: 'ops' },
   { name: 'Номенклатура', path: '/products', icon: Package, section: 'ops' },
   { name: 'Партии', path: '/lots', icon: Boxes, section: 'ops' },
@@ -31,6 +43,16 @@ const navItems = [
   { name: 'Контроль сроков', path: '/expiry-control', icon: ClockAlert, section: 'compliance' },
   { name: 'Отзыв партий', path: '/recall', icon: AlertOctagon, section: 'compliance' },
   { name: 'ТСД терминал', path: '/terminal', icon: Terminal, section: 'ops' },
+  { name: 'Отгрузки', path: '/shipments', icon: Truck, section: 'ops' },
+  {
+    name: 'Контрагенты',
+    icon: Handshake,
+    section: 'ops',
+    children: [
+      { name: 'Заказчики', path: '/counterparties/customers' },
+      { name: 'Поставщики', path: '/counterparties/suppliers' },
+    ],
+  },
   { name: 'Пользователи', path: '/users', icon: Users, section: 'system' },
   { name: 'Журнал аудита', path: '/audit', icon: ScrollText, section: 'system' },
   { name: 'Настройки', path: '/settings', icon: Settings, section: 'system' },
@@ -41,10 +63,24 @@ export default function Sidebar() {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const clearUser = useUserStore((s) => s.clearUser);
   const user = useUserStore((s) => s.user);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
 
-  const visibleItems = navItems.filter(
-    (item) => user && canAccessRoute(user.role, item.path),
-  );
+  const visibleItems = useMemo(() => {
+    if (!user) return [];
+    return navItems
+      .map((item) => {
+        if (item.path) {
+          return canAccessRoute(user.role, item.path) ? item : null;
+        }
+        if (item.children?.length) {
+          const children = item.children.filter((c) => canAccessRoute(user.role, c.path));
+          if (!children.length) return null;
+          return { ...item, children };
+        }
+        return null;
+      })
+      .filter(Boolean) as NavItem[];
+  }, [user]);
 
   const opsItems = visibleItems.filter((i) => i.section === 'ops');
   const complianceItems = visibleItems.filter((i) => i.section === 'compliance');
@@ -79,19 +115,66 @@ export default function Sidebar() {
               Основные операции
             </div>
             {opsItems.map((item) => (
-              <NavLink
-                key={item.path}
-                to={item.path}
-                className={({ isActive }) =>
-                  cn(
-                    'flex items-center space-x-2.5 px-2 py-1.5 rounded text-xs font-medium transition-colors',
-                    isActive ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-700 hover:bg-slate-200/70',
-                  )
-                }
-              >
-                <item.icon className="w-3.5 h-3.5" />
-                <span>{item.name}</span>
-              </NavLink>
+              <div key={item.path ?? item.name} className="space-y-0.5">
+                {item.path ? (
+                  <NavLink
+                    to={item.path}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center space-x-2.5 px-2 py-1.5 rounded text-xs font-medium transition-colors',
+                        isActive
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-700 hover:bg-slate-200/70',
+                      )
+                    }
+                  >
+                    <item.icon className="w-3.5 h-3.5" />
+                    <span>{item.name}</span>
+                  </NavLink>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setOpenGroup((g) => (g === item.name ? null : item.name))}
+                      className={cn(
+                        'w-full flex items-center justify-between px-2 py-1.5 rounded text-xs font-medium transition-colors',
+                        'text-slate-700 hover:bg-slate-200/70',
+                      )}
+                    >
+                      <span className="flex items-center gap-2.5">
+                        <item.icon className="w-3.5 h-3.5" />
+                        <span>{item.name}</span>
+                      </span>
+                      <ChevronDown
+                        className={cn(
+                          'w-3.5 h-3.5 transition-transform',
+                          openGroup === item.name ? 'rotate-180' : 'rotate-0',
+                        )}
+                      />
+                    </button>
+                    {openGroup === item.name && (
+                      <div className="pl-7 pr-1 pb-1 space-y-0.5">
+                        {item.children?.map((c) => (
+                          <NavLink
+                            key={c.path}
+                            to={c.path}
+                            className={({ isActive }) =>
+                              cn(
+                                'flex items-center px-2 py-1 rounded text-[11px] font-semibold transition-colors',
+                                isActive
+                                  ? 'bg-blue-600 text-white shadow-sm'
+                                  : 'text-slate-700 hover:bg-slate-200/70',
+                              )
+                            }
+                          >
+                            {c.name}
+                          </NavLink>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             ))}
           </>
         )}

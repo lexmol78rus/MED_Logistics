@@ -24,6 +24,9 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/movements': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/expiry-control': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/recall': ['ADMIN', 'MANAGER'],
+  '/shipments': ['ADMIN', 'MANAGER', 'OPERATOR'],
+  '/counterparties/customers': ['ADMIN', 'MANAGER'],
+  '/counterparties/suppliers': ['ADMIN', 'MANAGER'],
   '/settings': ['ADMIN', 'MANAGER'],
   '/settings/writeoff-destinations': ['ADMIN', 'MANAGER'],
   '/users': ['ADMIN'],
@@ -36,6 +39,9 @@ export function canAccessRoute(role: UserRole | null, path: string): boolean {
   const base = path.split('?')[0];
   if (base.startsWith('/products/')) {
     return ROUTE_ACCESS['/products']?.includes(role) ?? false;
+  }
+  if (base.startsWith('/shipments/')) {
+    return ROUTE_ACCESS['/shipments']?.includes(role) ?? false;
   }
   const allowed = ROUTE_ACCESS[base];
   if (!allowed) return true;

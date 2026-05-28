@@ -44,4 +44,8 @@ export class WriteoffInventoryDto {
   @Transform(({ value }) => value !== 'false' && value !== false)
   @IsBoolean()
   useFefoRecommendations?: boolean;
+
+  @IsOptional()
+  @IsString()
+  shipmentId?: string;
 }

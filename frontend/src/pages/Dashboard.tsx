@@ -21,8 +21,11 @@ import { canShiftReport } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { ApiError } from '../lib/api/client';
 import { loadSettings } from '../lib/settings/storage';
+import ShipmentWarehouseMessageBanner from '../components/shipments/ShipmentWarehouseMessageBanner';
+import { resolveWarehouseMessageMeta } from '../lib/shipments/warehouse-message';
 import { toast } from 'sonner';
 import { TruncatedText } from '../components/ui/TruncatedText';
+import { fetchShipments, shipmentStatusBadge, type ShipmentListItem } from '../lib/api/shipments';
 
 const CRITICAL_WIDGET_PREVIEW = 5;
 
@@ -31,6 +34,7 @@ export default function Dashboard() {
   const userRole = useUserStore((s) => s.user?.role ?? null);
   const [data, setData] = useState<DashboardSummary | null>(null);
   const [criticalLots, setCriticalLots] = useState<ExpiryListItem[]>([]);
+  const [pickingShipments, setPickingShipments] = useState<ShipmentListItem[]>([]);
   const [showAllCritical, setShowAllCritical] = useState(false);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -40,12 +44,16 @@ export default function Dashboard() {
     setRefreshing(true);
     if (!data) setLoading(true);
     try {
-      const [summary, expiry] = await Promise.all([
+      const [summary, expiry, picking] = await Promise.all([
         fetchDashboardSummary(),
         fetchExpiryAll({ filter: 'critical' }),
+        userRole === 'OPERATOR' || userRole === 'MANAGER'
+          ? fetchShipments('PICKING')
+          : Promise.resolve({ items: [] }),
       ]);
       setData(summary);
       setCriticalLots(expiry.items);
+      setPickingShipments(picking.items);
       setShowAllCritical(false);
       if (showSuccessToast) {
         toast.success('Данные обновлены');
@@ -175,6 +183,74 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+
+          {(userRole === 'OPERATOR' || userRole === 'MANAGER') && (
+            <div className="bg-white border border-slate-300 rounded shadow-sm overflow-hidden">
+              <div className="px-4 py-3 border-b bg-slate-50 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-slate-500">
+                    Заказы на сборку
+                  </div>
+                  <div className="text-sm font-bold text-slate-800">В сборке: {pickingShipments.length}</div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 text-xs font-semibold bg-slate-50 border-slate-300 hover:bg-slate-100 text-slate-700"
+                  onClick={() => navigate('/shipments')}
+                >
+                  Открыть отгрузки
+                </Button>
+              </div>
+              <div className="divide-y">
+                {pickingShipments.slice(0, 5).map((s) => {
+                  const warehouseMeta = resolveWarehouseMessageMeta(s);
+                  const badge = shipmentStatusBadge(s.status);
+                  return (
+                    <div key={s.id} className="px-4 py-3 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <div className="text-sm font-semibold text-slate-900 truncate">
+                              {s.counterparty?.name ?? '—'}
+                            </div>
+                            <span
+                              className={`shrink-0 inline-flex px-1.5 py-0.5 rounded border text-[10px] font-bold ${badge.className}`}
+                            >
+                              {badge.label}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-slate-500 font-mono truncate">
+                            Контракт: {s.contract?.number ?? '—'} · позиций: {s.itemsCount}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-8 shrink-0 text-xs font-semibold"
+                          onClick={() => navigate(`/shipments/${s.id}/print`)}
+                        >
+                          Печать
+                        </Button>
+                      </div>
+                      {warehouseMeta ? (
+                        <ShipmentWarehouseMessageBanner
+                          compact
+                          tone={warehouseMeta.tone}
+                          label={warehouseMeta.label}
+                          message={s.warehouseMessage!.trim()}
+                        />
+                      ) : null}
+                    </div>
+                  );
+                })}
+                {pickingShipments.length === 0 && (
+                  <div className="px-4 py-3 text-sm text-slate-600">Сейчас нет заявок на сборку</div>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7 flex-1 min-h-0">
             <div className="lg:col-span-4 bg-white border border-slate-300 rounded shadow-sm flex flex-col">

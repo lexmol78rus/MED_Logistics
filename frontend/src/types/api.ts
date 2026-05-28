@@ -74,6 +74,8 @@ export type MovementListItem = {
   correctionSessionId?: string | null;
   effectiveWriteoffQty?: number | null;
   editReason?: string | null;
+  shipmentId?: string | null;
+  shipmentLabel?: string | null;
 };
 
 export type ScannerProcessResult = {

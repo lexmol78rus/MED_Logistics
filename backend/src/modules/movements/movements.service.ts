@@ -34,6 +34,8 @@ export type MovementListItem = {
   lastCorrection?: MovementCorrectionMeta | null;
   correctionSessionId?: string | null;
   effectiveWriteoffQty?: number | null;
+  shipmentId?: string | null;
+  shipmentLabel?: string | null;
 };
 
 function formatMovementDate(date: Date): string {
@@ -100,6 +102,13 @@ export class MovementsService {
           product: { select: { name: true, sku: true } },
           lot: { select: { lotNumber: true, expiryDate: true } },
           destination: { select: { name: true } },
+          shipment: {
+            select: {
+              id: true,
+              contract: { select: { number: true } },
+              counterparty: { select: { name: true } },
+            },
+          },
         },
       }),
     ]);
@@ -169,6 +178,10 @@ export class MovementsService {
           m.type === MovementType.ADJUSTMENT
             ? 'Корректировка списания (возврат)'
             : 'Корректировка списания (доп.)';
+      } else if (m.type === MovementType.ISSUE && m.shipmentId) {
+        typeLabel = destinationLabel
+          ? `Отгрузка → списано → ${destinationLabel}`
+          : 'Отгрузка → списано';
       } else if (m.type === MovementType.ISSUE && destinationLabel) {
         typeLabel = `Списано → ${destinationLabel}`;
       }
@@ -215,6 +228,15 @@ export class MovementsService {
         correctionSessionId: m.correctionSessionId,
         effectiveWriteoffQty,
         editReason: m.editReason?.trim() || null,
+        shipmentId: m.shipmentId,
+        shipmentLabel: m.shipment
+          ? [
+              m.shipment.counterparty?.name,
+              m.shipment.contract?.number ? `№${m.shipment.contract.number}` : null,
+            ]
+              .filter(Boolean)
+              .join(' · ') || `Отгрузка ${m.shipment.id.slice(0, 8)}`
+          : null,
       };
     });
 

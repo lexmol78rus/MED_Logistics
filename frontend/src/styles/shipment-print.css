@@ -1,0 +1,402 @@
+/* Лист сборки: на экране — полный UI, при печати — только документ */
+
+.shipment-print-document {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 landscape;
+    margin: 8mm 10mm;
+  }
+
+  html,
+  body {
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    background: #fff !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  body[data-shipment-print] aside,
+  body[data-shipment-print] header,
+  body[data-shipment-print] [data-sonner-toaster],
+  body[data-shipment-print] .shipment-print-no-print {
+    display: none !important;
+  }
+
+  body[data-shipment-print] .flex.h-screen {
+    display: block !important;
+    height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  body[data-shipment-print] main,
+  body[data-shipment-print] main > div,
+  body[data-shipment-print] .shipment-print-page {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    background: #fff !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+
+  body[data-shipment-print] .shipment-print-screen-only {
+    display: none !important;
+  }
+
+  body[data-shipment-print] .shipment-print-document {
+    display: block !important;
+    width: 100% !important;
+    max-width: none !important;
+  }
+
+  body[data-shipment-print] .shipment-print-doc {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+}
+
+/* ── Document shell ───────────────────────────────────────── */
+
+.shipment-print-doc {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  font-family: 'Segoe UI', Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 9pt;
+  color: #0f172a;
+  line-height: 1.35;
+}
+
+/* Brand strip */
+.shipment-print-doc__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  background: #1e3a5f;
+  color: #f8fafc;
+  font-size: 7.5pt;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.shipment-print-doc__brand-meta {
+  text-align: right;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+/* Title row */
+.shipment-print-doc__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid #1e3a5f;
+}
+
+.shipment-print-doc__title-block {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.shipment-print-doc__title {
+  margin: 0;
+  font-size: 16pt;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.shipment-print-doc__subtitle {
+  margin: 3px 0 0;
+  font-size: 8pt;
+  color: #64748b;
+  line-height: 1.3;
+}
+
+.shipment-print-doc__status-wrap {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.shipment-print-doc__status {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1.5px solid #334155;
+  border-radius: 4px;
+  font-size: 8pt;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.shipment-print-doc__status--picking {
+  border-color: #2563eb;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.shipment-print-doc__status--hold {
+  border-color: #ea580c;
+  background: #fff7ed;
+  color: #c2410c;
+}
+
+.shipment-print-doc__status--picked {
+  border-color: #059669;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.shipment-print-doc__status--new {
+  border-color: #64748b;
+  background: #f8fafc;
+  color: #475569;
+}
+
+.shipment-print-doc__positions {
+  margin-top: 4px;
+  font-size: 7.5pt;
+  color: #64748b;
+}
+
+/* Meta cards */
+.shipment-print-doc__meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  margin-bottom: 8px;
+  border: 1px solid #94a3b8;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.shipment-print-doc__meta-block {
+  min-width: 0;
+  padding: 5px 8px;
+  border-right: 1px solid #cbd5e1;
+}
+
+.shipment-print-doc__meta-block:last-child {
+  border-right: none;
+}
+
+.shipment-print-doc__label {
+  margin-bottom: 2px;
+  font-size: 6.5pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.shipment-print-doc__value {
+  font-size: 9.5pt;
+  font-weight: 700;
+  line-height: 1.25;
+  word-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+
+.shipment-print-doc__value-mono {
+  font-family: ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+  font-size: 8.5pt;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.shipment-print-doc__value--id {
+  font-size: 7pt;
+  font-weight: 500;
+  line-height: 1.25;
+  word-break: break-all;
+}
+
+.shipment-print-doc__value-sub {
+  margin-top: 2px;
+  font-size: 7.5pt;
+  font-weight: 400;
+  color: #475569;
+  line-height: 1.3;
+}
+
+/* Alerts */
+.shipment-print-doc__alert {
+  margin-bottom: 7px;
+  padding: 6px 10px;
+  border: 1.5px solid #ea580c;
+  border-radius: 3px;
+  background: #fff7ed;
+  font-size: 8.5pt;
+  line-height: 1.35;
+}
+
+.shipment-print-doc__alert--note {
+  border-color: #ca8a04;
+  background: #fefce8;
+}
+
+.shipment-print-doc__alert-title {
+  margin-bottom: 2px;
+  font-weight: 800;
+  text-transform: uppercase;
+  font-size: 7.5pt;
+  letter-spacing: 0.06em;
+  color: #9a3412;
+}
+
+.shipment-print-doc__alert--note .shipment-print-doc__alert-title {
+  color: #854d0e;
+}
+
+/* Table */
+.shipment-print-doc__table-wrap {
+  width: 100%;
+}
+
+.shipment-print-doc__table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.shipment-print-doc__table thead {
+  display: table-header-group;
+}
+
+.shipment-print-doc__table th,
+.shipment-print-doc__table td {
+  border: 1px solid #64748b;
+  padding: 4px 6px;
+  vertical-align: top;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.shipment-print-doc__table th {
+  background: #1e3a5f;
+  color: #f8fafc;
+  font-size: 7pt;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.shipment-print-doc__table tbody tr {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.shipment-print-doc__table tbody tr:nth-child(even) td {
+  background: #f1f5f9;
+}
+
+.shipment-print-doc__col-no {
+  text-align: center;
+  font-weight: 700;
+  font-size: 8.5pt;
+  vertical-align: middle;
+}
+
+.shipment-print-doc__col-name {
+  font-size: 8.5pt;
+  line-height: 1.32;
+  text-align: left;
+}
+
+.shipment-print-doc__col-ref {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 8pt;
+  line-height: 1.28;
+  text-align: left;
+}
+
+.shipment-print-doc__col-unit {
+  text-align: center;
+  font-size: 8pt;
+  vertical-align: middle;
+}
+
+.shipment-print-doc__col-qty {
+  text-align: center;
+  font-weight: 800;
+  font-size: 11pt;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  vertical-align: middle;
+  background: #f8fafc;
+}
+
+.shipment-print-doc__table tbody tr:nth-child(even) .shipment-print-doc__col-qty {
+  background: #e2e8f0;
+}
+
+.shipment-print-doc__col-note {
+  font-size: 8pt;
+  line-height: 1.28;
+  color: #334155;
+}
+
+/* Footer / signatures */
+.shipment-print-doc__bottom {
+  margin-top: 12px;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.shipment-print-doc__sign {
+  display: grid;
+  grid-template-columns: 1fr 1fr 100px;
+  gap: 20px;
+}
+
+.shipment-print-doc__sign-item {
+  min-width: 0;
+}
+
+.shipment-print-doc__sign-line {
+  margin-top: 18px;
+  border-bottom: 1px solid #334155;
+  height: 0;
+}
+
+.shipment-print-doc__footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  padding-top: 4px;
+  border-top: 1px solid #cbd5e1;
+  font-size: 6.5pt;
+  color: #94a3b8;
+  line-height: 1.3;
+}
+
+.shipment-print-doc__footer-hint {
+  font-style: italic;
+  color: #94a3b8;
+}

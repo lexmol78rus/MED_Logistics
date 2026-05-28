@@ -28,6 +28,8 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { WriteoffDestinationsModule } from './modules/writeoff-destinations/writeoff-destinations.module';
 import { ExpectedReceiptsModule } from './modules/expected-receipts/expected-receipts.module';
 import { ProductRuModule } from './modules/product-ru/product-ru.module';
+import { CounterpartiesModule } from './modules/counterparties/counterparties.module';
+import { ShipmentsModule } from './modules/shipments/shipments.module';
 
 @Module({
   imports: [
@@ -85,6 +87,8 @@ import { ProductRuModule } from './modules/product-ru/product-ru.module';
     WriteoffDestinationsModule,
     ExpectedReceiptsModule,
     ProductRuModule,
+    CounterpartiesModule,
+    ShipmentsModule,
   ],
   providers: [
     {

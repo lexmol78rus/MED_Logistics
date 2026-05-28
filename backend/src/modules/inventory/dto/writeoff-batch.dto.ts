@@ -46,6 +46,10 @@ export class WriteoffBatchItemDto {
 }
 
 export class WriteoffBatchDto {
+  @IsOptional()
+  @IsString()
+  shipmentId?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ValidateNested({ each: true })

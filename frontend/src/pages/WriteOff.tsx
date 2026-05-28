@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Search, BoxSelect, AlertTriangle, Plus } from 'lucide-react';
 import { toast } from 'sonner';
@@ -23,6 +24,9 @@ import {
   syncWriteoffDraftOwner,
   useWriteoffDraftStore,
 } from '../stores/writeoffDraftStore';
+import { fetchShipmentWriteoffCartSeed } from '../lib/api/shipments';
+import { buildWriteoffCartFromShipment } from '../lib/shipments/build-writeoff-cart-from-shipment';
+import { canWriteoff } from '../lib/rbac/permissions';
 import { formatExpiryRu, lotIsExpired } from '../lib/writeoff/expiry';
 import {
   availableAfterCart,
@@ -63,8 +67,11 @@ function buildInitialQuantities(
 }
 
 export default function WriteOff() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const userId = useUserStore((s) => s.user?.userId ?? null);
+  const userRole = useUserStore((s) => s.user?.role ?? null);
   const operatorEmail = useUserStore((s) => s.user?.email ?? '—');
+  const shipmentSeedAppliedRef = useRef(false);
 
   const cart = useWriteoffDraftStore((s) => s.cart);
   const form = useWriteoffDraftStore((s) => s.form);
@@ -93,6 +100,56 @@ export default function WriteOff() {
   useEffect(() => {
     syncWriteoffDraftOwner(userId);
   }, [userId]);
+
+  useEffect(() => {
+    if (shipmentSeedAppliedRef.current) return;
+    const shipmentId = searchParams.get('shipmentId');
+    const destinationId = searchParams.get('destinationId');
+    const destinationLabel = searchParams.get('destinationLabel') ?? '';
+    if (!shipmentId || !destinationId || !canWriteoff(userRole)) return;
+
+    shipmentSeedAppliedRef.current = true;
+    setSearchParams({}, { replace: true });
+
+    void (async () => {
+      setLoading(true);
+      try {
+        const seed = await fetchShipmentWriteoffCartSeed(shipmentId);
+        setForm({
+          destinationId,
+          destinationLabel: destinationLabel || destinationId,
+        });
+        const { items, skipped } = await buildWriteoffCartFromShipment({
+          seed,
+          destinationId,
+          destinationLabel: destinationLabel || destinationId,
+          operatorEmail,
+          useFefoRecommendations: true,
+        });
+
+        const setCart = useWriteoffDraftStore.getState().setCart;
+        setCart(items);
+
+        if (items.length) {
+          toast.success(
+            `Корзина из отгрузки: ${items.length} ${items.length === 1 ? 'позиция' : 'позиций'} (${seed.customerName})`,
+          );
+        } else {
+          toast.error('Не удалось добавить позиции — проверьте REF и остатки на складе');
+        }
+        for (const s of skipped.slice(0, 5)) {
+          toast.warning(`Поз. ${s.lineNo}: ${s.reason}`, { duration: 6000 });
+        }
+        if (skipped.length > 5) {
+          toast.message(`Ещё ${skipped.length - 5} поз. пропущено`);
+        }
+      } catch (err) {
+        toast.error(err instanceof ApiError ? err.message : 'Не удалось заполнить корзину из отгрузки');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [searchParams, setSearchParams, userRole, operatorEmail, setForm]);
 
   const fefoLot = useMemo(
     () => (useFefoRecommendations && selectedProduct ? pickFefoLot(selectedProduct.lots) : null),
@@ -409,7 +466,10 @@ export default function WriteOff() {
     if (cart.length === 0) return;
     setBatchConfirmOpen(false);
 
+    const shipmentId = cart.find((item) => item.shipmentId)?.shipmentId;
+
     const payload = {
+      ...(shipmentId ? { shipmentId } : {}),
       items: cart.map((item) => ({
         productId: item.productId,
         writeOffDestinationId: item.writeOffDestinationId,
@@ -427,7 +487,9 @@ export default function WriteOff() {
       const count = cart.length;
       clearAllDraft();
       toast.success(
-        `Списание выполнено: ${count} поз., документы ${result.movementIds.slice(0, 3).join(', ')}${result.movementIds.length > 3 ? '…' : ''}`,
+        shipmentId
+          ? `Отгрузка списана: ${count} поз., документы ${result.movementIds.slice(0, 3).join(', ')}${result.movementIds.length > 3 ? '…' : ''}`
+          : `Списание выполнено: ${count} поз., документы ${result.movementIds.slice(0, 3).join(', ')}${result.movementIds.length > 3 ? '…' : ''}`,
       );
       restoreFocus();
     };
@@ -450,10 +512,20 @@ export default function WriteOff() {
   const batchTotalUnits = cart.reduce((sum, item) => sum + item.totalQty, 0);
   const showSplitLayout = Boolean(selectedProduct || cart.length > 0);
   const hasPersistedDraft = cart.length > 0 || Boolean(selectedProduct);
+  const linkedShipmentId = cart.find((item) => item.shipmentId)?.shipmentId ?? null;
 
   return (
     <div className="h-full min-h-0 flex flex-col max-w-6xl mx-auto gap-4 py-4 md:py-6">
       <div className="shrink-0">
+        {linkedShipmentId ? (
+          <div className="mb-3 rounded-lg border border-violet-200 bg-violet-50 px-4 py-2.5 text-sm text-violet-950">
+            <span className="font-semibold">Списание по отгрузке</span>
+            <span className="ml-2 font-mono text-[12px] text-violet-800">{linkedShipmentId}</span>
+            <p className="mt-1 text-[12px] text-violet-900/85">
+              Позиции подобраны по REF из листа сборки. После подтверждения отгрузка перейдёт в статус «Отгружен».
+            </p>
+          </div>
+        ) : null}
         <h2 className="text-lg font-bold tracking-tight leading-tight text-slate-800">
           Расход / Списание со склада
         </h2>

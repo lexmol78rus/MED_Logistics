@@ -79,6 +79,7 @@ export function writeoffInventory(payload: WriteoffPayload) {
 }
 
 export function writeoffInventoryBatch(payload: {
+  shipmentId?: string;
   items: WriteoffPayload[];
 }) {
   return apiFetch<{ success: boolean; movementIds: string[] }>(

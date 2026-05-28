@@ -19,6 +19,8 @@ export type WriteoffCartItem = {
   totalQty: number;
   operatorEmail: string;
   createdAt: string;
+  /** Привязка к отгрузке (списание по сборке). */
+  shipmentId?: string;
 };
 
 export function createWriteoffCartItemId(): string {
@@ -29,6 +31,7 @@ export function createWriteoffCartItemId(): string {
 }
 
 export type WriteoffBatchPayload = {
+  shipmentId?: string;
   items: {
     productId: string;
     writeOffDestinationId: string;

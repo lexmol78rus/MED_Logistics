@@ -21,6 +21,10 @@ import WriteOffDestinations from './pages/WriteOffDestinations';
 import Users from './pages/Users';
 import Audit from './pages/Audit';
 import Terminal from './pages/Terminal';
+import Shipments from './pages/Shipments';
+import ShipmentPrint from './pages/ShipmentPrint';
+import Customers from './pages/Customers';
+import Suppliers from './pages/Suppliers';
 import Forbidden from './pages/Forbidden';
 import { Toaster } from '@/components/ui/sonner';
 import BuildVersionCheck from './components/BuildVersionCheck';
@@ -51,6 +55,10 @@ export default function App() {
                 <Route path="/movements" element={<Movements />} />
                 <Route path="/expiry-control" element={<ExpiryControl />} />
                 <Route path="/recall" element={<RecallManagement />} />
+                <Route path="/shipments" element={<Shipments />} />
+                <Route path="/shipments/:id/print" element={<ShipmentPrint />} />
+                <Route path="/counterparties/customers" element={<Customers />} />
+                <Route path="/counterparties/suppliers" element={<Suppliers />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/settings/writeoff-destinations" element={<WriteOffDestinations />} />
                 <Route path="/users" element={<Users />} />

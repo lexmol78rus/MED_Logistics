@@ -1,4 +1,5 @@
 import { HoverHint } from '@/components/ui/HoverHint';
+import { parseWriteoffDestinationLabel } from '../../lib/movements/writeoffDestinationDisplay';
 
 type DestinationVariant =
   | 'internal'
@@ -51,11 +52,15 @@ export function resolveWriteOffDestinationVariant(
 
 export function WriteOffDestinationBadge({
   destination,
+  showCommentLine = false,
 }: {
   destination: string | null | undefined;
+  /** В раскрытой группе — вторая строка с контекстом отгрузки. */
+  showCommentLine?: boolean;
 }) {
   const label = destination?.trim() ?? '';
   const variant = resolveWriteOffDestinationVariant(label);
+  const { short, full, comment } = parseWriteoffDestinationLabel(label);
 
   if (variant === 'empty') {
     return (
@@ -68,10 +73,22 @@ export function WriteOffDestinationBadge({
   const colorClass = VARIANT_CLASS[variant];
 
   return (
-    <div className="movement-destination-cell flex h-full w-full min-w-0 items-center">
-      <HoverHint tip={label} className={`${BADGE_CLASS} ${colorClass}`}>
-        {label}
+    <div
+      className={`movement-destination-cell flex w-full min-w-0 ${
+        showCommentLine && comment ? 'h-auto flex-col items-start justify-center gap-0.5 py-0.5' : 'h-full items-center'
+      }`}
+    >
+      <HoverHint tip={full} className={`${BADGE_CLASS} ${colorClass}`}>
+        {short}
       </HoverHint>
+      {showCommentLine && comment && (
+        <p
+          className="max-w-full text-[10px] leading-snug text-slate-500 line-clamp-2 break-words"
+          title={comment}
+        >
+          {comment}
+        </p>
+      )}
     </div>
   );
 }

@@ -47,6 +47,32 @@ enum ExpectedReceiptEventType {
   CLOSED
 }
 
+enum CounterpartyType {
+  CUSTOMER
+  SUPPLIER
+}
+
+enum ContractDocType {
+  DOCX
+  HTML
+  PDF
+  OTHER
+}
+
+enum ShipmentPickingOutcome {
+  SUCCESS
+  PARTIAL
+  ISSUE
+}
+
+enum ShipmentStatus {
+  NEW
+  PICKING
+  PICKING_ON_HOLD
+  PICKED
+  DISPATCHED
+}
+
 model User {
   id           String    @id @default(cuid())
   email        String
@@ -110,6 +136,7 @@ model Product {
   movements        StockMovement[]
   expectedReceipts           ExpectedReceipt[]
   registrationCertificates   ProductRegistrationCertificate[]
+  shipmentItems              ShipmentItem[]
 
   @@map("products")
 }
@@ -213,9 +240,11 @@ model StockMovement {
   correctedMovementId   String?      @map("corrected_movement_id")
   correctionSessionId   String?      @map("correction_session_id")
   editReason            String?      @map("edit_reason")
+  shipmentId            String?      @map("shipment_id")
   createdAt             DateTime     @default(now()) @map("created_at")
 
   product           Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shipment          Shipment?            @relation(fields: [shipmentId], references: [id], onDelete: SetNull)
   lot               Lot?                 @relation(fields: [lotId], references: [id], onDelete: SetNull)
   destination       WriteOffDestination? @relation(fields: [writeOffDestinationId], references: [id], onDelete: SetNull)
   correctedMovement StockMovement?       @relation("MovementCorrections", fields: [correctedMovementId], references: [id], onDelete: SetNull)
@@ -227,6 +256,7 @@ model StockMovement {
   @@index([operationGroupId])
   @@index([correctedMovementId])
   @@index([correctionSessionId])
+  @@index([shipmentId])
   @@map("stock_movements")
 }
 
@@ -312,4 +342,103 @@ model ExpectedReceiptEvent {
 
   @@index([expectedReceiptId, createdAt])
   @@map("expected_receipt_events")
+}
+
+model Counterparty {
+  id        String           @id @default(cuid())
+  type      CounterpartyType
+  name      String
+  fullName  String?          @map("full_name")
+  inn       String?
+  kpp       String?
+  comment   String?
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  contracts Contract[]
+  shipments Shipment[]
+
+  @@index([type, isActive])
+  @@index([name])
+  @@map("counterparties")
+}
+
+model Contract {
+  id             String          @id @default(cuid())
+  counterpartyId String          @map("counterparty_id")
+  number         String          @map("number")
+  date           DateTime?       @map("date")
+  title          String?
+  docType        ContractDocType @default(OTHER) @map("doc_type")
+  originalName   String          @map("original_name")
+  mimeType       String          @map("mime_type")
+  fileSize       Int             @map("file_size")
+  fileName       String          @map("file_name")
+  storagePath    String          @map("storage_path")
+  uploadedBy     String?         @map("uploaded_by")
+  procurementItems Json?         @map("procurement_items")
+  procurementParsedAt DateTime?  @map("procurement_parsed_at")
+  procurementParseError String?  @map("procurement_parse_error")
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  counterparty Counterparty @relation(fields: [counterpartyId], references: [id], onDelete: Cascade)
+  shipments    Shipment[]
+
+  @@unique([counterpartyId, number])
+  @@index([number])
+  @@index([counterpartyId, createdAt])
+  @@map("contracts")
+}
+
+model Shipment {
+  id             String         @id @default(cuid())
+  status         ShipmentStatus @default(NEW)
+  counterpartyId String?        @map("counterparty_id")
+  contractId     String?        @map("contract_id")
+  note           String?
+  createdBy      String?        @map("created_by")
+  pickingSentAt      DateTime? @map("picking_sent_at")
+  pickingPausedAt    DateTime? @map("picking_paused_at")
+  pickingRecalledAt        DateTime?               @map("picking_recalled_at")
+  warehouseMessage         String?                 @map("warehouse_message")
+  pickingOutcome           ShipmentPickingOutcome? @map("picking_outcome")
+  pickingCompleteComment   String?                 @map("picking_complete_comment")
+  pickedAt                 DateTime?               @map("picked_at")
+  writeoffCompletedAt      DateTime?               @map("writeoff_completed_at")
+  createdAt                DateTime                @default(now()) @map("created_at")
+  updatedAt                DateTime                @updatedAt @map("updated_at")
+
+  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  contract     Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  items        ShipmentItem[]
+  movements    StockMovement[]
+
+  @@index([status, createdAt])
+  @@index([counterpartyId])
+  @@index([contractId])
+  @@map("shipments")
+}
+
+model ShipmentItem {
+  id             String   @id @default(cuid())
+  shipmentId     String   @map("shipment_id")
+  productId      String?  @map("product_id")
+  name           String
+  code           String?
+  unit           String?
+  vatRate        String?  @map("vat_rate")
+  priceWithVat   Decimal? @map("price_with_vat") @db.Decimal(18, 4)
+  quantity       Decimal  @db.Decimal(18, 4)
+  sum            Decimal? @db.Decimal(18, 4)
+  contractLineNo Int?     @map("contract_line_no")
+  managerNote    String?  @map("manager_note")
+  managerTag     String?  @map("manager_tag")
+
+  shipment Shipment  @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  product  Product?  @relation(fields: [productId], references: [id], onDelete: SetNull)
+
+  @@index([shipmentId])
+  @@index([productId])
+  @@map("shipment_items")
 }

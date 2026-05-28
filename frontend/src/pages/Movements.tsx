@@ -290,7 +290,10 @@ export default function Movements() {
         paddingLeft: '4px',
         paddingRight: '4px',
       },
-      tooltipValueGetter: () => null,
+      tooltipValueGetter: (p) => {
+        const dest = movementField(p.data, 'destination');
+        return dest?.trim() ? dest.trim() : null;
+      },
       cellRenderer: (params: ICellRendererParams<MovementGridRow>) => (
         <WriteOffDestinationBadge destination={movementField(params.data, 'destination')} />
       ),

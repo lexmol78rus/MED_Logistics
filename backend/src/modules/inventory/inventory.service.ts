@@ -31,6 +31,8 @@ import {
 import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
 import { WriteoffDestinationsService } from '../writeoff-destinations/writeoff-destinations.service';
 import { ExpectedReceiptsService } from '../expected-receipts/expected-receipts.service';
+import { ShipmentsService } from '../shipments/shipments.service';
+import { formatShipmentWriteoffMovementComment } from '../../common/utils/shipment-picking-outcome.util';
 
 export type WriteoffLotRecommendation = {
   lotId: string;
@@ -61,6 +63,7 @@ export class InventoryService {
     private readonly settings: SettingsService,
     private readonly writeoffDestinations: WriteoffDestinationsService,
     private readonly expectedReceipts: ExpectedReceiptsService,
+    private readonly shipments: ShipmentsService,
   ) {}
 
   async list(query: SearchPaginationQueryDto) {
@@ -258,12 +261,19 @@ export class InventoryService {
       actorEmail,
       actorId,
       'inventory.writeoff',
+      { shipmentId: dto.shipmentId },
     );
+    if (dto.shipmentId) {
+      await this.shipments.finalizeWriteoff(dto.shipmentId, actorEmail);
+    }
     return { success: true, movementIds: references };
   }
 
   async writeoffBatch(dto: WriteoffBatchDto, actorEmail?: string, actorId?: string) {
-    this.logger.log(`writeoffBatch items=${dto.items.length}`);
+    this.logger.log(`writeoffBatch items=${dto.items.length} shipmentId=${dto.shipmentId ?? '—'}`);
+    if (dto.shipmentId) {
+      await this.shipments.getWriteoffContext(dto.shipmentId);
+    }
     for (const item of dto.items) {
       await this.assertWriteoffProductExists(item.productId);
       await this.logFefoViolationsForItem(item, actorId);
@@ -273,8 +283,12 @@ export class InventoryService {
       actorEmail,
       actorId,
       'inventory.writeoff.batch',
+      { shipmentId: dto.shipmentId },
     );
-    return { success: true, movementIds: references };
+    if (dto.shipmentId) {
+      await this.shipments.finalizeWriteoff(dto.shipmentId, actorEmail);
+    }
+    return { success: true, movementIds: references, shipmentId: dto.shipmentId ?? null };
   }
 
   async correctWriteoffGroup(
@@ -673,7 +687,12 @@ export class InventoryService {
     actorEmail: string | undefined,
     actorId: string | undefined,
     auditAction: 'inventory.writeoff' | 'inventory.writeoff.batch',
+    options?: { shipmentId?: string },
   ): Promise<string[]> {
+    const shipmentId = options?.shipmentId?.trim() || null;
+    const shipmentCtx = shipmentId
+      ? await this.shipments.getWriteoffContext(shipmentId)
+      : null;
     const destinationById = new Map<
       string,
       Awaited<ReturnType<WriteoffDestinationsService['assertActiveDestination']>>
@@ -748,6 +767,15 @@ export class InventoryService {
             }
           }
 
+          const movementComment = shipmentCtx
+            ? formatShipmentWriteoffMovementComment({
+                shipmentId: shipmentCtx.id,
+                contractNumber: shipmentCtx.contract?.number ?? null,
+                counterpartyName: shipmentCtx.counterparty?.name ?? null,
+                itemComment: item.writeOffComment,
+              })
+            : item.writeOffComment?.trim() || null;
+
           const movement = await tx.stockMovement.create({
             data: {
               reference: await this.nextReference(tx),
@@ -758,8 +786,9 @@ export class InventoryService {
               actorEmail: actorEmail ?? null,
               writeOffDestinationId: destination.id,
               writeOffDestination: destination.legacyCode,
-              writeOffComment: item.writeOffComment?.trim() || null,
+              writeOffComment: movementComment,
               operationGroupId: itemGroupId,
+              shipmentId,
             },
           });
           references.push(movement.reference);
@@ -778,6 +807,7 @@ export class InventoryService {
           ),
           writeOffComment: item.writeOffComment?.trim() || null,
           operationGroupId: itemGroupId,
+          shipmentId,
         });
       }
 
@@ -789,6 +819,7 @@ export class InventoryService {
             operationGroupId: sharedGroupId,
             itemCount: items.length,
             lineCount: activeLineCount,
+            shipmentId,
           }
         : {
             lines: auditItems[0]?.lines,
@@ -797,6 +828,7 @@ export class InventoryService {
             writeOffDestinationLabel: auditItems[0]?.writeOffDestinationLabel,
             writeOffComment: auditItems[0]?.writeOffComment,
             operationGroupId: sharedGroupId,
+            shipmentId,
           };
 
       await tx.auditLog.create({

@@ -34,6 +34,13 @@ import {
 import { fetchSettings, patchSettings } from '../lib/api/settings';
 import { ApiError } from '../lib/api/client';
 import {
+  canAdminShiftReport,
+  canEditFefoSettings,
+  canManageFullWarehouseSettings,
+  canManageWriteoffDestinations,
+} from '../lib/rbac/permissions';
+import { useUserStore } from '../stores/userStore';
+import {
   appBuildCommit,
   appBuildId,
   formatBuildLabel,
@@ -47,6 +54,12 @@ import {
 } from '../lib/settings/storage';
 
 export default function Settings() {
+  const role = useUserStore((s) => s.user?.role ?? null);
+  const fullAccess = canManageFullWarehouseSettings(role);
+  const showShiftReports = canAdminShiftReport(role);
+  const showWriteoffDestinations = canManageWriteoffDestinations(role);
+  const showFefo = canEditFefoSettings(role);
+
   const [settings, setSettings] = useState<WarehouseSettings>(() => loadSettings());
   const [savedSnapshot, setSavedSnapshot] = useState<WarehouseSettings>(() => loadSettings());
   const [loading, setLoading] = useState(true);
@@ -74,18 +87,18 @@ export default function Settings() {
     setSettings((s) => pickWarehouseSettings({ ...s, [key]: value }));
   };
 
-  const handleSave = async () => {
+  const handleSave = async (managerScope = false) => {
     const previous = savedSnapshot;
     setSaving(true);
     const toSave = pickWarehouseSettings(settings as WarehouseSettings & Record<string, unknown>);
     saveSettings(toSave);
     try {
-      const saved = await patchSettings(toSave);
+      const saved = await patchSettings(toSave, { managerScope });
       const merged = pickWarehouseSettings({ ...DEFAULT_SETTINGS, ...saved });
       setSettings(merged);
       setSavedSnapshot(merged);
       saveSettings(merged);
-      toast.success('Настройки сохранены');
+      toast.success(managerScope ? 'Настройки FEFO сохранены' : 'Настройки сохранены');
     } catch (err) {
       setSettings(previous);
       saveSettings(previous);
@@ -118,7 +131,9 @@ export default function Settings() {
           <div>
             <h1 className="text-xl font-semibold tracking-tight text-slate-900">Настройки</h1>
             <p className="mt-1 max-w-xl text-sm text-slate-500">
-              Параметры склада, интерфейса и почтовых уведомлений
+              {fullAccess
+                ? 'Параметры склада, интерфейса и почтовых уведомлений'
+                : 'Отчёты смены, назначения списания и параметры FEFO'}
             </p>
           </div>
         </div>
@@ -127,8 +142,9 @@ export default function Settings() {
         </span>
       </header>
 
-      <AdminShiftReportCard />
+      {showShiftReports && <AdminShiftReportCard />}
 
+      {fullAccess && (
       <Card className={settingsCardClass}>
         <CardHeader className={settingsCardHeaderClass}>
           <div className="flex items-center gap-2">
@@ -151,7 +167,9 @@ export default function Settings() {
           />
         </CardContent>
       </Card>
+      )}
 
+      {showWriteoffDestinations && (
       <Card className={settingsCardClass}>
         <CardContent className={`${settingsCardBodyClass} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>
           <div className="flex min-w-0 flex-1 gap-3.5">
@@ -174,16 +192,19 @@ export default function Settings() {
           </Link>
         </CardContent>
       </Card>
-
-      {import.meta.env.VITE_DISABLE_MAIL_SETTINGS !== 'true' ? (
-        <MailSettingsSection />
-      ) : (
-        <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
-          Mail settings UI disabled (VITE_DISABLE_MAIL_SETTINGS=true) — trace test mode
-        </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-2">
+      {fullAccess &&
+        (import.meta.env.VITE_DISABLE_MAIL_SETTINGS !== 'true' ? (
+          <MailSettingsSection />
+        ) : (
+          <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            Mail settings UI disabled (VITE_DISABLE_MAIL_SETTINGS=true) — trace test mode
+          </p>
+        ))}
+
+      <div className={`grid gap-6 ${fullAccess ? 'lg:grid-cols-2' : ''}`}>
+        {showFefo && (
         <Card className={settingsCardClass}>
           <CardHeader className={settingsCardHeaderClass}>
             <div className="flex items-center gap-2">
@@ -218,8 +239,29 @@ export default function Settings() {
               />
             </div>
           </CardContent>
+          {!fullAccess && (
+            <CardFooter className={`${settingsCardFooterClass} flex flex-col gap-2 sm:flex-row`}>
+              <Button
+                variant="outline"
+                onClick={handleReset}
+                disabled={saving}
+                className="h-9 flex-1 border-slate-200"
+              >
+                Сбросить
+              </Button>
+              <Button
+                onClick={() => void handleSave(true)}
+                disabled={saving}
+                className="h-9 flex-1 bg-blue-700 text-white hover:bg-blue-800"
+              >
+                {saving ? 'Сохранение…' : 'Сохранить FEFO'}
+              </Button>
+            </CardFooter>
+          )}
         </Card>
+        )}
 
+        {fullAccess && (
         <Card className={settingsCardClass}>
           <CardHeader className={settingsCardHeaderClass}>
             <div className="flex items-center gap-2">
@@ -249,8 +291,10 @@ export default function Settings() {
             />
           </CardContent>
         </Card>
+        )}
       </div>
 
+      {fullAccess && (
       <Card className={settingsCardClass}>
         <CardHeader className={settingsCardHeaderClass}>
           <div className="flex items-center gap-2">
@@ -295,7 +339,7 @@ export default function Settings() {
             Сбросить
           </Button>
           <Button
-            onClick={() => void handleSave()}
+            onClick={() => void handleSave(false)}
             disabled={saving}
             className="h-9 flex-1 bg-blue-700 text-white hover:bg-blue-800"
           >
@@ -303,6 +347,7 @@ export default function Settings() {
           </Button>
         </CardFooter>
       </Card>
+      )}
 
       <p className="text-center font-mono text-xs text-slate-400">
         Build: {formatBuildLabel(appBuildId)}

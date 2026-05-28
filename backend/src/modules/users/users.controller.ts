@@ -8,7 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ADMIN_ONLY, READ_ROLES } from '../../common/constants/roles';
+import { ADMIN_MANAGER, ADMIN_ONLY, READ_ROLES } from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtUser } from '../../common/interfaces/jwt-user.interface';
@@ -28,7 +28,7 @@ export class UsersController {
     return { user };
   }
 
-  @Roles(...ADMIN_ONLY)
+  @Roles(...ADMIN_MANAGER)
   @Get()
   list(@Query() query: UsersQueryDto) {
     return this.users.list(query);

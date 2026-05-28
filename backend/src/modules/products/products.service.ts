@@ -64,6 +64,22 @@ export type QuickCreateProductResult = ProductDetail & {
   created: boolean;
 };
 
+export type DeleteProductResult = {
+  deleted: true;
+  productId: string;
+  sku: string;
+  name: string;
+  counts: {
+    lots: number;
+    inventoryRows: number;
+    movements: number;
+    expectedReceipts: number;
+    registrationCertificates: number;
+    barcodeRecords: number;
+  };
+  forced: boolean;
+};
+
 @Injectable()
 export class ProductsService {
   private readonly logger = new Logger(ProductsService.name);
@@ -260,42 +276,158 @@ export class ProductsService {
     const sku = await this.resolveQuickCreateSku(dto.sku, barcode);
     this.logger.log(`quick-create product sku=${sku} barcode=${barcode}`);
 
-    const product = await this.prisma.product.create({
-      data: {
-        sku,
-        name,
-        manufacturer: dto.manufacturer?.trim() || null,
-        barcodes: { create: { barcode } },
-      },
+    const include = this.productQuickCreateInclude();
+
+    // Concurrency-safe quick-create:
+    // - Two users may quick-create same REF/barcode in parallel.
+    // - DB unique constraints decide the winner; we then reuse the created product.
+    try {
+      const product = await this.prisma.product.create({
+        data: {
+          sku,
+          name,
+          manufacturer: dto.manufacturer?.trim() || null,
+          // Avoid nested create race on barcode unique: link separately (upsert).
+        },
+        include,
+      });
+
+      await this.prisma.barcodeRecord.upsert({
+        where: { barcode },
+        create: { barcode, productId: product.id },
+        update: { productId: product.id, lotId: null },
+      });
+
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'product.quick_create',
+          entityType: 'product',
+          entityId: product.id,
+          metadata: { sku: product.sku, name: product.name, barcode },
+        },
+      });
+
+      const created = await this.toListItem(product);
+      return { ...created, category: null, storageCond: null, created: true };
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Someone created it just now (by sku or barcode). Re-fetch and proceed idempotently.
+        const existingBySku = await this.prisma.product.findUnique({ where: { sku }, include });
+        const existing =
+          existingBySku ??
+          (await this.prisma.barcodeRecord
+            .findUnique({ where: { barcode }, select: { productId: true } })
+            .then((row) =>
+              row?.productId
+                ? this.prisma.product.findUnique({ where: { id: row.productId }, include })
+                : null,
+            ));
+
+        if (existing) {
+          await this.prisma.barcodeRecord.upsert({
+            where: { barcode },
+            create: { barcode, productId: existing.id },
+            update: { productId: existing.id, lotId: null },
+          });
+          const item = await this.toListItem(existing);
+          return { ...item, category: null, storageCond: null, created: false };
+        }
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Debug-only cleanup: delete product and all dependent data.
+   *
+   * - Product relations mostly onDelete: Cascade.
+   * - Barcode records are onDelete: SetNull, so we delete them explicitly to avoid future barcode conflicts.
+   */
+  async deleteProduct(id: string, actorEmail?: string, force = false): Promise<DeleteProductResult> {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
       include: {
-        barcodes: { take: 1, orderBy: { createdAt: 'asc' } },
-        lots: {
-          select: {
-            id: true,
-            lotNumber: true,
-            expiryDate: true,
-            status: true,
-            inventoryRows: {
-              where: { quantity: { gt: 0 } },
-              select: { quantity: true, reservedQuantity: true, location: true },
-            },
+        lots: { select: { id: true } },
+        inventoryRows: { select: { id: true, quantity: true, reservedQuantity: true } },
+        movements: { select: { id: true } },
+        expectedReceipts: { select: { id: true } },
+        registrationCertificates: { select: { id: true } },
+        barcodes: { select: { id: true } },
+      },
+    });
+    if (!product) throw new NotFoundException('Товар не найден');
+
+    const totalQty = product.inventoryRows.reduce((sum, row) => sum + decimalToNumber(row.quantity), 0);
+    const reservedQty = product.inventoryRows.reduce(
+      (sum, row) => sum + decimalToNumber(row.reservedQuantity ?? 0),
+      0,
+    );
+
+    // Safety rail: avoid accidental deletion of non-empty / historical items unless forced.
+    if (!force) {
+      if (totalQty > 0 || reservedQty > 0) {
+        throw new ConflictException(
+          'Нельзя удалить товар: есть остаток/резерв. Используйте параметр force=1 (админский debug).',
+        );
+      }
+      if (product.movements.length > 0) {
+        throw new ConflictException(
+          'Нельзя удалить товар: есть движения по складу. Используйте параметр force=1 (админский debug).',
+        );
+      }
+      if (product.expectedReceipts.length > 0) {
+        throw new ConflictException(
+          'Нельзя удалить товар: есть ожидаемые поступления. Используйте параметр force=1 (админский debug).',
+        );
+      }
+    }
+
+    const lotIds = product.lots.map((l) => l.id);
+    const barcodeWhere: Prisma.BarcodeRecordWhereInput = lotIds.length
+      ? { OR: [{ productId: id }, { lotId: { in: lotIds } }] }
+      : { productId: id };
+
+    const counts = {
+      lots: product.lots.length,
+      inventoryRows: product.inventoryRows.length,
+      movements: product.movements.length,
+      expectedReceipts: product.expectedReceipts.length,
+      registrationCertificates: product.registrationCertificates.length,
+      barcodeRecords: product.barcodes.length,
+    };
+
+    this.logger.warn(
+      `delete product id=${id} sku=${product.sku} force=${force} by=${actorEmail ?? 'unknown'}`,
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.barcodeRecord.deleteMany({ where: barcodeWhere });
+      await tx.product.delete({ where: { id } });
+      await tx.auditLog.create({
+        data: {
+          action: 'product.delete',
+          entityType: 'product',
+          entityId: id,
+          metadata: {
+            actorEmail: actorEmail ?? null,
+            sku: product.sku,
+            name: product.name,
+            forced: force,
+            counts,
+            qty: { total: totalQty, reserved: reservedQty },
           },
         },
-        inventoryRows: { select: { quantity: true } },
-      },
+      });
     });
 
-    await this.prisma.auditLog.create({
-      data: {
-        action: 'product.quick_create',
-        entityType: 'product',
-        entityId: product.id,
-        metadata: { sku: product.sku, name: product.name, barcode },
-      },
-    });
-
-    const created = await this.toListItem(product);
-    return { ...created, category: null, storageCond: null, created: true };
+    return {
+      deleted: true,
+      productId: id,
+      sku: product.sku,
+      name: product.name,
+      counts,
+      forced: force,
+    };
   }
 
   private productQuickCreateInclude() {
@@ -344,7 +476,12 @@ export class ProductsService {
     );
 
     if (!productIdFromBarcode) {
-      await this.prisma.barcodeRecord.create({ data: { barcode: barcode.trim(), productId } });
+      // Concurrency-safe: two users may link same barcode simultaneously.
+      await this.prisma.barcodeRecord.upsert({
+        where: { barcode: barcode.trim() },
+        create: { barcode: barcode.trim(), productId },
+        update: options?.allowReassign ? { productId, lotId: null } : {},
+      });
       return;
     }
 
@@ -436,10 +573,13 @@ export class ProductsService {
         }
       }
 
-      const count = await tx.stockMovement.count();
       await tx.stockMovement.create({
         data: {
-          reference: `ПЕР-${String(count + 1).padStart(4, '0')}`,
+          // Must be unique under concurrency.
+          reference: `ПЕР-${Date.now().toString(36).toUpperCase()}-${crypto
+            .randomUUID()
+            .slice(0, 8)
+            .toUpperCase()}`,
           productId: id,
           type: MovementType.ADJUSTMENT,
           quantity: 0,

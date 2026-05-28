@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { MovementType, Prisma } from '@prisma/client';
 import { PaginatedResponse } from '../../common/interfaces/paginated-response.interface';
 import { decimalToNumber } from '../../common/utils/decimal.util';
+import { formatAppDateTime } from '../../common/utils/datetime-moscow.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { MovementsQueryDto } from './dto/movements-query.dto';
 import { resolveWriteoffDestinationLabel } from '../../common/utils/writeoff-destination-label';
@@ -36,8 +37,7 @@ export type MovementListItem = {
 };
 
 function formatMovementDate(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(date.getDate())}.${pad(date.getMonth() + 1)}.${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return formatAppDateTime(date);
 }
 
 const TYPE_LABELS: Record<MovementType, string> = {

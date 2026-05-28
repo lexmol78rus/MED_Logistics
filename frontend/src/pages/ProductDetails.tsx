@@ -22,15 +22,16 @@ import {
 } from '../lib/agGrid/gridPreset';
 import { toast } from 'sonner';
 import ProductFormDialog from '../components/products/ProductFormDialog';
-import { fetchProduct } from '../lib/api/products';
+import { deleteProduct, fetchProduct } from '../lib/api/products';
 import { fetchLots } from '../lib/api/lots';
 import { fetchMovements } from '../lib/api/movements';
 import type { LotListItem, MovementListItem, ProductDetail } from '../types/api';
 import { ApiError } from '../lib/api/client';
-import { canEditProduct } from '../lib/rbac/permissions';
+import { canDeleteProductDebug, canEditProduct } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import { loadSettings } from '../lib/settings/storage';
 import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
+import ConfirmDialog from '../components/ops/ConfirmDialog';
 
 type LotRow = {
   lotArea?: string;
@@ -74,6 +75,8 @@ export default function ProductDetails() {
   const [movementData, setMovementData] = useState<MovementListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [editOpen, setEditOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const loadProductCard = useCallback(async () => {
     if (!id) return;
@@ -180,6 +183,22 @@ export default function ProductDetails() {
       : null;
 
   const settings = loadSettings();
+  const canDelete = canDeleteProductDebug(userRole);
+
+  const handleDelete = async () => {
+    if (!id || deleting) return;
+    setDeleting(true);
+    try {
+      const res = await deleteProduct(id, { force: true });
+      toast.success(`Удалено: ${res.name} (${res.sku})`);
+      navigate('/products');
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Ошибка удаления товара');
+    } finally {
+      setDeleting(false);
+      setDeleteConfirmOpen(false);
+    }
+  };
 
   return (
     <div className="h-full flex flex-col gap-4 max-w-screen-2xl mx-auto min-h-0">
@@ -211,17 +230,30 @@ export default function ProductDetails() {
             </div>
           </div>
         </div>
-        {canEditProduct(userRole) && (
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-8 text-xs font-semibold bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
-            onClick={() => setEditOpen(true)}
-          >
-            <Edit className="w-3.5 h-3.5 mr-1.5" />
-            Редактировать
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {canDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs font-bold bg-red-50 border-red-300 text-red-800 hover:bg-red-100"
+              onClick={() => setDeleteConfirmOpen(true)}
+              disabled={deleting}
+            >
+              Удалить (debug)
+            </Button>
+          )}
+          {canEditProduct(userRole) && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 text-xs font-semibold bg-white border-slate-300 text-slate-700 hover:bg-slate-50"
+              onClick={() => setEditOpen(true)}
+            >
+              <Edit className="w-3.5 h-3.5 mr-1.5" />
+              Редактировать
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-1 bg-white border border-slate-300 rounded p-1 shadow-sm">
@@ -350,6 +382,14 @@ export default function ProductDetails() {
       )}
 
       <ProductFormDialog open={editOpen} product={product} onClose={() => setEditOpen(false)} onSaved={loadProductCard} />
+      <ConfirmDialog
+        open={deleteConfirmOpen}
+        title="Удалить товар из номенклатуры?"
+        message="Это debug-операция администратора: будет удалён товар и связанные данные (штрихкоды, партии, остатки, движения и т.д.). Действие необратимо."
+        confirmLabel={deleting ? 'Удаление...' : 'Удалить'}
+        onConfirm={() => void handleDelete()}
+        onCancel={() => setDeleteConfirmOpen(false)}
+      />
     </div>
   );
 }

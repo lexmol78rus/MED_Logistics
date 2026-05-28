@@ -73,6 +73,9 @@ export const useReceivingDraftStore = create<ReceivingDraftState>()(
         set((state) => {
           const nextCart = state.cart.filter((entry) => entry.id !== id);
           const clearEdit = state.form.editingCartId === id;
+          if (nextCart.length === 0) {
+            return { cart: nextCart, form: defaultReceivingFormDraft() };
+          }
           return {
             cart: nextCart,
             form: clearEdit
@@ -82,10 +85,10 @@ export const useReceivingDraftStore = create<ReceivingDraftState>()(
         }),
 
       clearCart: () =>
-        set((state) => ({
+        set({
           cart: [],
-          form: { ...state.form, editingCartId: null },
-        })),
+          form: defaultReceivingFormDraft(),
+        }),
 
       clearScannedProduct: () =>
         set((state) => ({
@@ -124,9 +127,15 @@ export function syncReceivingDraftOwner(userId: string | null) {
   const state = useReceivingDraftStore.getState();
   if (!userId) return;
   if (state.ownerUserId && state.ownerUserId !== userId) {
-    state.clearAllDraft();
+    discardReceivingDraft();
   }
   if (state.ownerUserId !== userId) {
     state.setOwnerUserId(userId);
   }
+}
+
+/** Полный сброс черновика приёмки (память + localStorage). */
+export function discardReceivingDraft(): void {
+  useReceivingDraftStore.getState().clearAllDraft();
+  void useReceivingDraftStore.persist.clearStorage();
 }

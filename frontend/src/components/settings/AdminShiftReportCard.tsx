@@ -101,7 +101,7 @@ export function AdminShiftReportCard() {
           </CardTitle>
         </div>
         <CardDescription className="text-xs text-slate-500">
-          PDF по операциям выбранного сотрудника за период (только для администратора). Архив
+          PDF по операциям выбранного сотрудника за период (администратор и менеджер). Архив
           журнала — {archiveDays} сут.
         </CardDescription>
       </CardHeader>

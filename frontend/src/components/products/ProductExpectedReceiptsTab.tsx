@@ -12,6 +12,7 @@ import {
   type ExpectedReceiptStatus,
 } from '../../lib/api/expected-receipts';
 import { ApiError } from '../../lib/api/client';
+import { formatAppDateTime } from '../../lib/datetime';
 import { canReceive, type UserRole } from '../../lib/rbac/permissions';
 import { TruncatedText } from '../ui/TruncatedText';
 import ExpectedReceiptCommentDialog, {
@@ -136,14 +137,7 @@ export default function ProductExpectedReceiptsTab({ productId, userRole }: Prop
     await load();
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  const formatDate = (iso: string) => formatAppDateTime(iso);
 
   const isActive = (s: ExpectedReceiptStatus) =>
     s === 'ORDERED' || s === 'PARTIALLY_RECEIVED';

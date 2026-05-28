@@ -51,15 +51,9 @@ import {
   sharedGridOptions,
 } from '../lib/agGrid/gridPreset';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
+import { formatAppDateTime } from '../lib/datetime';
 
 const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'];
-
-function formatDateTime(iso: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 export default function Users() {
   const currentUser = useUserStore((s) => s.user);
@@ -192,7 +186,7 @@ export default function Users() {
         headerName: 'ПОСЛЕДНИЙ ВХОД',
         minWidth: 120,
         maxWidth: 160,
-        valueFormatter: (p) => formatDateTime(p.value as string | null),
+        valueFormatter: (p) => formatAppDateTime(p.value as string | null),
         cellClass: 'font-mono text-[10px] text-slate-600',
       }),
       compactColumnDef({
@@ -200,7 +194,7 @@ export default function Users() {
         headerName: 'СОЗДАН',
         minWidth: 120,
         maxWidth: 160,
-        valueFormatter: (p) => formatDateTime(p.value as string),
+        valueFormatter: (p) => formatAppDateTime(p.value as string),
         cellClass: 'font-mono text-[10px] text-slate-500',
       }),
       compactColumnDef({

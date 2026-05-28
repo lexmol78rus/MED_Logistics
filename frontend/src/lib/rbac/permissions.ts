@@ -24,8 +24,8 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/movements': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/expiry-control': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/recall': ['ADMIN', 'MANAGER'],
-  '/settings': ['ADMIN'],
-  '/settings/writeoff-destinations': ['ADMIN'],
+  '/settings': ['ADMIN', 'MANAGER'],
+  '/settings/writeoff-destinations': ['ADMIN', 'MANAGER'],
   '/users': ['ADMIN'],
   '/audit': ['ADMIN'],
   '/terminal': ['ADMIN', 'MANAGER', 'OPERATOR'],
@@ -53,6 +53,11 @@ export function canQuickCreateProduct(role: UserRole | null): boolean {
 
 export function canEditProduct(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** Debug-only: allow hard delete of products in nomenclature. */
+export function canDeleteProductDebug(role: UserRole | null): boolean {
+  return role === 'ADMIN';
 }
 
 export function canExport(role: UserRole | null): boolean {
@@ -86,6 +91,26 @@ export function canRecall(role: UserRole | null): boolean {
 
 export function canManageUsers(role: UserRole | null): boolean {
   return role === 'ADMIN';
+}
+
+/** Страница настроек: полный доступ (почта, сканер, архив и т.д.). */
+export function canManageFullWarehouseSettings(role: UserRole | null): boolean {
+  return role === 'ADMIN';
+}
+
+/** Отчёт смены по выбранному сотруднику (блок в настройках). */
+export function canAdminShiftReport(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** Справочник назначений списания. */
+export function canManageWriteoffDestinations(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** FEFO и пороги сроков годности. */
+export function canEditFefoSettings(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER';
 }
 
 export function isReadOnly(role: UserRole | null): boolean {

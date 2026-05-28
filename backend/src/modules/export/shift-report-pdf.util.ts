@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 import type { Content, TDocumentDefinitions } from 'pdfmake/interfaces';
+import { formatAppDate, formatAppDateTime } from '../../common/utils/datetime-moscow.util';
 
 type PdfMakeOutput = {
   getBuffer: () => Promise<Buffer>;
@@ -58,21 +59,11 @@ export type ShiftReportPdfInput = {
 };
 
 function formatRuDateTime(d: Date): string {
-  return d.toLocaleString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatAppDateTime(d);
 }
 
 function formatRuDate(d: Date): string {
-  return d.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
+  return formatAppDate(d);
 }
 
 function truncate(text: string, max: number): string {

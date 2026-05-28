@@ -1,4 +1,5 @@
 import type { AuditLogItem } from '../api/audit';
+import { formatAppDate, formatAppTime } from '../datetime';
 import { CATEGORY_LABELS, resolveActionConfig } from './actionConfig';
 import { formatActorLabel, resolveActorDisplay } from './resolveActor';
 import type { AuditLookups, EnrichedAuditRow } from './types';
@@ -48,13 +49,7 @@ export function formatAuditDate(iso: string | null | undefined): string {
   if (!iso) return '—';
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return String(iso);
-  const date = d.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  });
-  const time = d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  return `${date} • ${time}`;
+  return `${formatAppDate(d)} • ${formatAppTime(d)}`;
 }
 
 /** @deprecated Use resolveActorDisplay from ./resolveActor */

@@ -1,9 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, PackagePlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { quickCreateProduct } from '../../lib/api/products';
-import type { QuickCreateProductResult } from '../../lib/api/products';
-import { ApiError } from '../../lib/api/client';
 import { toast } from 'sonner';
 
 export type ReceivingCreateProductForm = {
@@ -12,11 +9,20 @@ export type ReceivingCreateProductForm = {
   manufacturer: string;
 };
 
+export type ReceivingCreateProductDraft = {
+  barcode: string;
+  name: string;
+  ref: string;
+  manufacturer: string | null;
+  minimal: boolean;
+};
+
 type ReceivingCreateProductModalProps = {
   open: boolean;
   barcode: string;
+  initialForm?: Partial<ReceivingCreateProductForm> | null;
   onClose: () => void;
-  onCreated: (product: QuickCreateProductResult) => void;
+  onSubmitDraft: (draft: ReceivingCreateProductDraft) => void;
 };
 
 const emptyForm = (): ReceivingCreateProductForm => ({
@@ -28,8 +34,9 @@ const emptyForm = (): ReceivingCreateProductForm => ({
 export default function ReceivingCreateProductModal({
   open,
   barcode,
+  initialForm,
   onClose,
-  onCreated,
+  onSubmitDraft,
 }: ReceivingCreateProductModalProps) {
   const [form, setForm] = useState<ReceivingCreateProductForm>(emptyForm());
   const [saving, setSaving] = useState(false);
@@ -37,10 +44,10 @@ export default function ReceivingCreateProductModal({
 
   useEffect(() => {
     if (!open) return;
-    setForm(emptyForm());
+    setForm({ ...emptyForm(), ...(initialForm ?? {}) });
     const t = window.setTimeout(() => nameRef.current?.focus(), 50);
     return () => window.clearTimeout(t);
-  }, [open, barcode]);
+  }, [open, barcode, initialForm]);
 
   useEffect(() => {
     if (!open) return;
@@ -53,44 +60,68 @@ export default function ReceivingCreateProductModal({
 
   if (!open) return null;
 
-  const submit = async (name: string, minimal = false) => {
-    const trimmedName = name.trim();
+  const submit = async (
+    values: { name: string; ref: string; manufacturer: string },
+    minimal = false,
+  ) => {
+    const trimmedName = values.name.trim();
+    const trimmedRef = values.ref.trim();
+    const trimmedManufacturer = values.manufacturer.trim();
+
     if (!trimmedName) {
       toast.error('Укажите наименование товара');
       nameRef.current?.focus();
       return;
     }
+    if (!trimmedRef) {
+      toast.error('Укажите REF / артикул');
+      return;
+    }
+    if (!trimmedManufacturer) {
+      toast.error('Укажите производителя');
+      return;
+    }
 
     setSaving(true);
     try {
-      const result = await quickCreateProduct({
+      onSubmitDraft({
         barcode,
         name: trimmedName,
-        sku: form.ref.trim() || undefined,
-        manufacturer: form.manufacturer.trim() || undefined,
+        ref: trimmedRef,
+        manufacturer: trimmedManufacturer,
+        minimal,
       });
-      if (result.created) {
-        toast.success(minimal ? 'Минимальная карточка создана' : 'Товар создан');
-      } else {
-        toast.info('Товар уже в базе — продолжаем приёмку (укажите LOT / партию)');
-      }
-      onCreated(result);
-      onClose();
+      // Закрытие модалки — в onSubmitDraft (не onClose: иначе сбросится черновик шага 2).
     } catch (err) {
-      toast.error(err instanceof ApiError ? err.message : 'Ошибка создания товара');
+      toast.error('Ошибка подготовки карточки товара');
     } finally {
       setSaving(false);
     }
   };
 
   const handleMinimal = () => {
-    void submit(`НЕИЗВЕСТНЫЙ ТОВАР ${barcode}`, true);
+    const next = {
+      name: `НЕИЗВЕСТНЫЙ ТОВАР ${barcode}`,
+      ref: form.ref.trim() || barcode,
+      manufacturer: form.manufacturer.trim() || 'Неизвестно',
+    };
+    setForm((f) => ({
+      ...f,
+      name: next.name,
+      ref: next.ref,
+      manufacturer: next.manufacturer,
+    }));
+    void submit(next, true);
   };
 
   const handleFormKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
-      void submit(form.name);
+      void submit({
+        name: form.name,
+        ref: form.ref,
+        manufacturer: form.manufacturer,
+      });
     }
   };
 
@@ -142,46 +173,56 @@ export default function ReceivingCreateProductModal({
               value={form.name}
               onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Введите название"
+              required
               disabled={saving}
             />
           </div>
 
           <div className="flex flex-col gap-1">
             <label htmlFor="recv-product-ref" className="text-[10px] font-bold uppercase text-slate-500">
-              REF / артикул
+              REF / артикул <span className="text-red-500">*</span>
             </label>
             <input
               id="recv-product-ref"
               className="h-9 rounded border border-slate-300 px-3 text-sm font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               value={form.ref}
               onChange={(e) => setForm((f) => ({ ...f, ref: e.target.value }))}
-              placeholder="Авто, если пусто"
+              placeholder="Введите REF / артикул"
+              required
               disabled={saving}
             />
           </div>
 
           <div className="flex flex-col gap-1">
             <label htmlFor="recv-product-mfr" className="text-[10px] font-bold uppercase text-slate-500">
-              Производитель
+              Производитель <span className="text-red-500">*</span>
             </label>
             <input
               id="recv-product-mfr"
               className="h-9 rounded border border-slate-300 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               value={form.manufacturer}
               onChange={(e) => setForm((f) => ({ ...f, manufacturer: e.target.value }))}
+              placeholder="Введите производителя"
+              required
               disabled={saving}
             />
           </div>
 
           <p className="text-[10px] text-slate-400 leading-tight">
-            Категорию и ед. измерения можно дозаполнить позже в номенклатуре. Для приёмки достаточно названия и штрихкода.
+            Категорию и ед. измерения можно дозаполнить позже в номенклатуре.
           </p>
         </div>
 
         <div className="flex flex-col gap-2 border-t border-slate-200 bg-slate-50 px-4 py-3">
           <Button
             className="h-9 w-full text-xs font-bold bg-blue-700 hover:bg-blue-800"
-            onClick={() => void submit(form.name)}
+            onClick={() =>
+              void submit({
+                name: form.name,
+                ref: form.ref,
+                manufacturer: form.manufacturer,
+              })
+            }
             disabled={saving}
           >
             {saving ? 'Создание...' : 'Создать и продолжить приёмку'}

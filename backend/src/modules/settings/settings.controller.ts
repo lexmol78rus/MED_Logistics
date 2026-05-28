@@ -1,5 +1,14 @@
-import { Body, Controller, Get, Patch, Post } from '@nestjs/common';
-import { ADMIN_ONLY, READ_ROLES } from '../../common/constants/roles';
+import {
+  Body,
+  Controller,
+  ForbiddenException,
+  Get,
+  Patch,
+  Post,
+} from '@nestjs/common';
+import { UserRole } from '@prisma/client';
+import { ADMIN_MANAGER, ADMIN_ONLY, READ_ROLES } from '../../common/constants/roles';
+import { pickManagerSettingsPatch } from './settings-manager-keys';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { JwtUser } from '../../common/interfaces/jwt-user.interface';
@@ -22,9 +31,16 @@ export class SettingsController {
     return this.settings.get();
   }
 
-  @Roles(...ADMIN_ONLY)
+  @Roles(...ADMIN_MANAGER)
   @Patch()
   patch(@Body() dto: PatchSettingsDto, @CurrentUser() user?: JwtUser) {
+    if (user?.role === UserRole.MANAGER) {
+      const allowed = pickManagerSettingsPatch(dto);
+      if (Object.keys(allowed).length === 0) {
+        throw new ForbiddenException('Недостаточно прав для изменения этих настроек');
+      }
+      return this.settings.patch(allowed, user.userId, user.email);
+    }
     return this.settings.patch(dto, user?.userId, user?.email);
   }
 

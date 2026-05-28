@@ -2,6 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { Pencil, ShoppingCart, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../ops/ConfirmDialog';
+import { formatAppTime } from '../../lib/datetime';
 import type { WriteoffCartItem } from '../../types/writeoff-cart';
 
 type Props = {
@@ -16,7 +17,7 @@ type Props = {
 function formatDraftTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return formatAppTime(d);
 }
 
 function DetailRow({

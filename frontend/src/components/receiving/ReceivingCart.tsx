@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { ArrowDownToLine, Pencil, ShoppingCart, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../ops/ConfirmDialog';
+import { formatAppTime } from '../../lib/datetime';
 import type { ReceivingCartItem } from '../../types/receiving-cart';
 
 type Props = {
@@ -16,7 +17,7 @@ type Props = {
 function formatDraftTime(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+  return formatAppTime(d);
 }
 
 function formatExpiry(date: string): string {
@@ -183,7 +184,7 @@ export default function ReceivingCart({
       <ConfirmDialog
         open={clearConfirmOpen}
         title="Очистить корзину?"
-        message="Удалить все позиции из списка приёмки? Текущий товар в форме сохранится."
+        message="Удалить все позиции из списка приёмки и сбросить черновик? Несохранённые данные будут потеряны."
         confirmLabel="Очистить корзину"
         onConfirm={() => {
           setClearConfirmOpen(false);

@@ -66,3 +66,26 @@ export function updateProduct(id: string, payload: UpdateProductPayload) {
     body: JSON.stringify(payload),
   });
 }
+
+export type DeleteProductResult = {
+  deleted: true;
+  productId: string;
+  sku: string;
+  name: string;
+  counts: {
+    lots: number;
+    inventoryRows: number;
+    movements: number;
+    expectedReceipts: number;
+    registrationCertificates: number;
+    barcodeRecords: number;
+  };
+  forced: boolean;
+};
+
+export function deleteProduct(id: string, options?: { force?: boolean }) {
+  const force = options?.force ? '1' : '0';
+  return apiFetch<DeleteProductResult>(`/products/${id}?force=${force}`, {
+    method: 'DELETE',
+  });
+}

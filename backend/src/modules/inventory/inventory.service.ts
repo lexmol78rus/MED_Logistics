@@ -814,8 +814,11 @@ export class InventoryService {
   }
 
   private async nextReference(tx: Prisma.TransactionClient): Promise<string> {
-    const count = await tx.stockMovement.count();
-    return `ПЕР-${String(count + 1).padStart(4, '0')}`;
+    // IMPORTANT: must be unique under concurrency.
+    // Previous implementation used COUNT()+1 which collides with parallel transactions.
+    const ts = Date.now().toString(36).toUpperCase();
+    const rnd = crypto.randomUUID().slice(0, 8).toUpperCase();
+    return `ПЕР-${ts}-${rnd}`;
   }
 
   /** Поиск товара для списания: штрихкод, REF, GTIN (EAN), LOT, внутренний код (SKU). */

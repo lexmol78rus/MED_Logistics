@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, ForbiddenException } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, ForbiddenException } from '@nestjs/common';
 import {
   ADMIN_MANAGER,
   ADMIN_MANAGER_OPERATOR,
@@ -41,6 +41,17 @@ export class ProductsController {
   @Post('quick-create')
   quickCreate(@Body() dto: QuickCreateProductDto) {
     return this.products.quickCreate(dto);
+  }
+
+  /** Debug-only: delete product and dependencies (admin only). */
+  @Roles(...ADMIN_ONLY)
+  @Delete(':id')
+  delete(
+    @Param('id') id: string,
+    @Query('force') force?: string,
+    @CurrentUser() user?: JwtUser,
+  ) {
+    return this.products.deleteProduct(id, user?.email, force === 'true' || force === '1');
   }
 
   @Roles(...ADMIN_MANAGER)

@@ -8,7 +8,7 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { ADMIN_ONLY, READ_ROLES } from '../../common/constants/roles';
+import { ADMIN_MANAGER, READ_ROLES } from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtUser } from '../../common/interfaces/jwt-user.interface';
@@ -27,13 +27,13 @@ export class WriteoffDestinationsController {
     return this.destinations.list(query);
   }
 
-  @Roles(...ADMIN_ONLY)
+  @Roles(...ADMIN_MANAGER)
   @Post()
   create(@Body() dto: CreateWriteoffDestinationDto, @CurrentUser() actor: JwtUser) {
     return this.destinations.create(dto, actor.userId);
   }
 
-  @Roles(...ADMIN_ONLY)
+  @Roles(...ADMIN_MANAGER)
   @Patch(':id')
   update(
     @Param('id') id: string,
@@ -43,7 +43,7 @@ export class WriteoffDestinationsController {
     return this.destinations.update(id, dto, actor.userId);
   }
 
-  @Roles(...ADMIN_ONLY)
+  @Roles(...ADMIN_MANAGER)
   @Delete(':id')
   remove(@Param('id') id: string, @CurrentUser() actor: JwtUser) {
     return this.destinations.remove(id, actor.userId);

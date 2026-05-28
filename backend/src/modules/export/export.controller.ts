@@ -89,9 +89,13 @@ export class ExportController {
     const targetUserId = query.userId?.trim() || user.userId;
     const forOtherEmployee = targetUserId !== user.userId;
 
-    if (forOtherEmployee && user.role !== UserRole.ADMIN) {
+    if (
+      forOtherEmployee &&
+      user.role !== UserRole.ADMIN &&
+      user.role !== UserRole.MANAGER
+    ) {
       throw new ForbiddenException(
-        'Только администратор может формировать отчёт другого сотрудника',
+        'Только администратор или менеджер может формировать отчёт другого сотрудника',
       );
     }
 

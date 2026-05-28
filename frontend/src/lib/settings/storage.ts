@@ -26,6 +26,14 @@ export const LEGACY_SETTINGS_KEYS = [
   'passwordEnc',
 ] as const;
 
+/** FEFO + expiry thresholds — editable by manager (must match backend). */
+export const MANAGER_WAREHOUSE_SETTINGS_KEYS: (keyof WarehouseSettings)[] = [
+  'fefoEnabled',
+  'fefoStrict',
+  'expiryWarningDays',
+  'expiryCriticalDays',
+];
+
 const WAREHOUSE_SETTINGS_KEYS: (keyof WarehouseSettings)[] = [
   'warehouseName',
   'warehouseCode',
@@ -93,6 +101,22 @@ export function pickWarehouseSettings(
     }
   }
   return picked;
+}
+
+/** PATCH body for manager — FEFO-related fields only. */
+export function buildManagerSettingsPatchPayload(
+  raw: Partial<WarehouseSettings> & Record<string, unknown>,
+): Pick<
+  WarehouseSettings,
+  'fefoEnabled' | 'fefoStrict' | 'expiryWarningDays' | 'expiryCriticalDays'
+> {
+  const s = pickWarehouseSettings(raw);
+  return {
+    fefoEnabled: s.fefoEnabled,
+    fefoStrict: s.fefoStrict,
+    expiryWarningDays: s.expiryWarningDays,
+    expiryCriticalDays: s.expiryCriticalDays,
+  };
 }
 
 /** Explicit PATCH body — only whitelisted fields, never legacy keys. */

@@ -16,7 +16,7 @@ import {
   primaryTextColumnDef,
   refColumnDef,
   sharedGridOptions,
-  stockQtyColumnDef,
+  productsPairedMetricColumnDef,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
 import { Search, Download, Plus, Filter, Database } from 'lucide-react';
@@ -280,7 +280,9 @@ export default function Products() {
       valueGetter: (p) => p.data?.product.manufacturer,
       cellClass: 'text-slate-600 text-xs',
     }, GRID_FLEX_WIDE),
-    stockQtyColumnDef('product.qty', {
+    productsPairedMetricColumnDef({
+      field: 'product.qty',
+      headerName: 'ОСТАТОК',
       valueGetter: (p) => p.data?.product.qty,
       valueFormatter: (p) => {
         if (isProductGroupMasterRow(p.data)) {
@@ -292,14 +294,14 @@ export default function Products() {
         'movement-group-qty-summary': (p) => isProductGroupMasterRow(p.data),
       },
     }),
-    compactColumnDef({
+    productsPairedMetricColumnDef({
       field: 'product.nearestExpiry',
       headerName: 'БЛИЖАЙШИЙ СРОК',
       minWidth: 136,
       maxWidth: 160,
       flex: 0.95,
+      cellClass: 'ag-cell-nearest-expiry',
       valueGetter: (p) => productField(p.data, 'nearestExpiry'),
-      cellClass: 'ag-cell-nearest-expiry font-mono text-xs',
       valueFormatter: (p) => {
         if (isProductGroupMasterRow(p.data)) return '—';
         const v = p.value as string | null | undefined;
@@ -307,10 +309,7 @@ export default function Products() {
         return v;
       },
       cellClassRules: {
-        'text-slate-400 font-normal': (params) =>
-          !isProductGroupMasterRow(params.data) &&
-          (params.value === 'Н/Д' || !params.value),
-        'text-red-600 font-bold bg-red-50': (params) => {
+        'ag-cell-nearest-expiry-critical': (params) => {
           if (isProductGroupMasterRow(params.data)) return false;
           if (params.value === 'Н/Д' || !params.value) return false;
           return isExpiryCritical(params.value as string, expiryThresholds);

@@ -10,6 +10,7 @@ import {
   type ProductRuDocument,
 } from '../../lib/api/product-ru';
 import { ApiError } from '../../lib/api/client';
+import { formatAppDateTime } from '../../lib/datetime';
 import { canEditProduct, type UserRole } from '../../lib/rbac/permissions';
 
 type Props = {
@@ -25,13 +26,7 @@ function formatFileSize(bytes: number): string {
 
 function formatDate(iso: string): string {
   try {
-    return new Date(iso).toLocaleString('ru-RU', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    return formatAppDateTime(iso);
   } catch {
     return iso;
   }

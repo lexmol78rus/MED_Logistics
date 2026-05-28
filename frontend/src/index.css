@@ -109,6 +109,26 @@
   padding-inline: 2px;
 }
 
+/* Nomenclature grid — paired «Остаток» / «Ближайший срок» (same face for all rows) */
+.products-grid.compact-data-grid .ag-cell-products-metric,
+.products-grid.compact-data-grid .ag-cell-products-metric .ag-cell-value {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  letter-spacing: 0;
+  text-align: center;
+}
+
+.products-grid.compact-data-grid .ag-cell-nearest-expiry.ag-cell-nearest-expiry-critical,
+.products-grid.compact-data-grid .ag-cell-nearest-expiry.ag-cell-nearest-expiry-critical .ag-cell-value {
+  color: #dc2626;
+  background-color: #fef2f2;
+}
+
 .compact-data-grid .ag-cell-wrapper,
 .compact-data-grid .ag-cell-value {
   width: 100%;
@@ -122,7 +142,7 @@
   text-align: center;
 }
 
-.compact-data-grid .ag-cell-stock-qty {
+.compact-data-grid .ag-cell-stock-qty:not(.ag-cell-products-metric) {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: 700;
   color: #0f172a;
@@ -549,11 +569,11 @@
 
 .movements-grid .ag-cell-movement-qty.movement-group-qty-summary,
 .movements-grid .ag-cell-movement-qty.movement-group-qty-summary .ag-cell-value,
-.products-grid .ag-cell-stock-qty.movement-group-qty-summary,
-.products-grid .ag-cell-stock-qty.movement-group-qty-summary .ag-cell-value {
+.products-grid.compact-data-grid .ag-cell-products-metric.movement-group-qty-summary,
+.products-grid.compact-data-grid .ag-cell-products-metric.movement-group-qty-summary .ag-cell-value {
   color: #64748b;
   font-weight: 600;
-  font-size: 0.6875rem;
+  font-size: 12px;
   text-transform: lowercase;
 }
 

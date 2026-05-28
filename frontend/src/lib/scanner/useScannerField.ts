@@ -1,6 +1,22 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { loadSettings } from '../settings/storage';
+import { fixScannerKeyboardLayout } from './fixKeyboardLayout';
 import { playErrorSound, playScanSound, playSuccessSound } from './scanner-audio';
+
+function shouldBlockBrowserShortcut(e: KeyboardEvent): boolean {
+  const key = e.key.toLowerCase();
+  // Chrome/Edge: Ctrl+, opens Settings. Scanners sometimes send modifier combos as prefix/suffix.
+  if ((e.ctrlKey || e.metaKey) && key === ',') return true;
+  // Common browser-navigation shortcuts that would disrupt scanning flow.
+  if (e.ctrlKey || e.metaKey) {
+    if (key === 'l' || key === 't' || key === 'w' || key === 'r') return true;
+  }
+  if (e.altKey) {
+    if (key === 'arrowleft' || key === 'arrowright') return true;
+  }
+  if (key === 'f5') return true;
+  return false;
+}
 
 type ScannerHandlers = {
   onScan: (value: string) => void | Promise<void>;
@@ -24,7 +40,7 @@ export function useScannerField({ onScan, enabled = true, onClear }: ScannerHand
 
   const enqueueScan = useCallback(
     (raw: string) => {
-      const value = raw.trim();
+      const value = fixScannerKeyboardLayout(raw.trim());
       if (!value) return;
 
       const now = Date.now();
@@ -67,10 +83,25 @@ export function useScannerField({ onScan, enabled = true, onClear }: ScannerHand
 
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = document.activeElement?.tagName;
+      const inEditable =
+        tag === 'INPUT' ||
+        tag === 'TEXTAREA' ||
+        tag === 'SELECT' ||
+        Boolean(document.activeElement?.closest('[contenteditable="true"]'));
+
       if (
-        tag !== 'INPUT' &&
-        tag !== 'TEXTAREA' &&
-        tag !== 'SELECT' &&
+        !document.activeElement?.closest('.ag-popup, .ag-filter, .ag-menu, .ag-select-list') &&
+        shouldBlockBrowserShortcut(e) &&
+        (!inEditable || document.activeElement === inputRef.current)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        inputRef.current?.focus();
+        return;
+      }
+
+      if (
+        !inEditable &&
         !document.activeElement?.closest('.ag-popup, .ag-filter, .ag-menu, .ag-select-list') &&
         e.key.length === 1 &&
         !e.ctrlKey &&

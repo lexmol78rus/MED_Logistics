@@ -31,12 +31,7 @@ import {
   primaryTextColumnDef,
   sharedGridOptions,
 } from '../lib/agGrid/gridPreset';
-
-function formatDateTime(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
+import { formatAppDateTime } from '../lib/datetime';
 
 export default function WriteOffDestinations() {
   const gridRef = useRef<AgGridReact<WriteoffDestinationItem>>(null);
@@ -174,7 +169,7 @@ export default function WriteOffDestinations() {
         headerName: 'ДАТА СОЗДАНИЯ',
         minWidth: 120,
         maxWidth: 170,
-        valueFormatter: (p) => formatDateTime(String(p.value ?? '')),
+        valueFormatter: (p) => formatAppDateTime(String(p.value ?? '')),
         cellClass: 'font-mono text-xs text-slate-600',
       }),
       compactColumnDef({

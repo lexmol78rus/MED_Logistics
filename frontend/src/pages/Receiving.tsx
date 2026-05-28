@@ -16,7 +16,7 @@ import {
   fetchActiveExpectedReceipts,
   type ExpectedReceipt,
 } from '../lib/api/expected-receipts';
-import type { QuickCreateProductResult } from '../lib/api/products';
+import { quickCreateProduct, type QuickCreateProductResult } from '../lib/api/products';
 import { ApiError } from '../lib/api/client';
 import { useScannerField } from '../lib/scanner/useScannerField';
 import ReceivingCreateProductModal from '../components/receiving/ReceivingCreateProductModal';
@@ -33,11 +33,100 @@ import {
   type ReceivingCartItem,
 } from '../types/receiving-cart';
 import {
+  discardReceivingDraft,
   syncReceivingDraftOwner,
   useReceivingDraftStore,
   type ReceivingScannedProduct,
 } from '../stores/receivingDraftStore';
 import { enqueueRetry } from '../lib/ops/retry-queue';
+import type { ReceivingCreateProductDraft } from '../components/receiving/ReceivingCreateProductModal';
+import { createDraftProductId, isDraftProductId } from '../lib/receiving/draftProduct';
+
+/** Создание карточки в номенклатуре — только при «Оприходовать всё» (шаг 3). */
+async function resolveReceivingProductId(item: ReceivingCartItem): Promise<string> {
+  if (!isDraftProductId(item.productId)) return item.productId;
+  const created = await quickCreateProduct({
+    barcode: item.barcode,
+    name: item.productName,
+    sku: item.productRef.trim() || undefined,
+    manufacturer: item.manufacturer?.trim() || undefined,
+  });
+  return created.id;
+}
+
+function isoToRuDate(value: string): string {
+  // Expect ISO yyyy-mm-dd from store; keep empty/unknown as-is.
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  if (!m) return '';
+  return `${m[3]}.${m[2]}.${m[1]}`;
+}
+
+function ruToIsoDate(value: string): string | null {
+  const raw = value.trim();
+  const m = /^(\d{2})\.(\d{2})\.(\d{4})$/.exec(raw);
+  if (!m) return null;
+  const dd = Number(m[1]);
+  const mm = Number(m[2]);
+  const yyyy = Number(m[3]);
+  if (!Number.isInteger(dd) || !Number.isInteger(mm) || !Number.isInteger(yyyy)) return null;
+  if (yyyy < 1900 || yyyy > 2100) return null;
+  const d = new Date(Date.UTC(yyyy, mm - 1, dd));
+  // Validate roundtrip (catches 31.02 etc.)
+  if (d.getUTCFullYear() !== yyyy || d.getUTCMonth() !== mm - 1 || d.getUTCDate() !== dd) {
+    return null;
+  }
+  const iso = `${String(yyyy).padStart(4, '0')}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`;
+  return iso;
+}
+
+function clampExpiryParts(parts: { dd?: string; mm?: string; yyyy?: string }) {
+  const toNum = (v?: string) => (v && /^\d+$/.test(v) ? Number(v) : NaN);
+  let dd = toNum(parts.dd);
+  let mm = toNum(parts.mm);
+  const yyyy = toNum(parts.yyyy);
+
+  if (!Number.isFinite(dd)) dd = 1;
+  if (!Number.isFinite(mm)) mm = 1;
+
+  dd = Math.min(Math.max(dd, 1), 31);
+  mm = Math.min(Math.max(mm, 1), 12);
+
+  // If year is known, clamp day by month length (incl. leap year for Feb).
+  if (Number.isFinite(yyyy)) {
+    const daysInMonth = new Date(Date.UTC(yyyy, mm, 0)).getUTCDate(); // mm: 1-12
+    dd = Math.min(dd, daysInMonth);
+  }
+
+  return {
+    dd: String(dd).padStart(2, '0'),
+    mm: String(mm).padStart(2, '0'),
+    yyyy: Number.isFinite(yyyy) ? String(yyyy).padStart(4, '0') : parts.yyyy,
+  };
+}
+
+function normalizeExpiryInput(nextRaw: string): string {
+  // Keep only digits, auto-insert dots as dd.mm.yyyy
+  const digits = nextRaw.replace(/\D/g, '').slice(0, 8);
+  if (digits.length <= 2) {
+    return digits;
+  }
+
+  // When day/month are complete, keep them within valid ranges to prevent impossible dates like 20.28....
+  const rawDd = digits.slice(0, 2);
+  const rawMm = digits.length >= 4 ? digits.slice(2, 4) : digits.slice(2);
+  const rawYyyy = digits.length > 4 ? digits.slice(4) : '';
+
+  const ddFixed =
+    rawDd.length === 2 ? clampExpiryParts({ dd: rawDd }).dd : rawDd;
+  const mmFixed =
+    rawMm.length === 2 ? clampExpiryParts({ mm: rawMm }).mm : rawMm;
+
+  if (digits.length <= 4) {
+    return `${ddFixed}.${mmFixed}`;
+  }
+
+  return `${ddFixed}.${mmFixed}.${rawYyyy}`;
+}
 
 export default function Receiving() {
   const userRole = useUserStore((s) => s.user?.role ?? null);
@@ -49,9 +138,7 @@ export default function Receiving() {
   const setForm = useReceivingDraftStore((s) => s.setForm);
   const upsertCartItem = useReceivingDraftStore((s) => s.upsertCartItem);
   const removeCartItem = useReceivingDraftStore((s) => s.removeCartItem);
-  const clearCart = useReceivingDraftStore((s) => s.clearCart);
   const clearScannedProduct = useReceivingDraftStore((s) => s.clearScannedProduct);
-  const clearAllDraft = useReceivingDraftStore((s) => s.clearAllDraft);
 
   const {
     scannedProduct,
@@ -63,6 +150,8 @@ export default function Receiving() {
     editingCartId,
   } = form;
 
+  const [expiryText, setExpiryText] = useState('');
+
   const [barcode, setBarcode] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -73,11 +162,16 @@ export default function Receiving() {
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
 
   useEffect(() => {
+    // Keep UI text in sync when draft changes (edit line, clear, restore from storage).
+    setExpiryText(expiry ? isoToRuDate(expiry) : '');
+  }, [expiry]);
+
+  useEffect(() => {
     syncReceivingDraftOwner(userId);
   }, [userId]);
 
   useEffect(() => {
-    if (!scannedProduct?.id) {
+    if (!scannedProduct?.id || isDraftProductId(scannedProduct.id)) {
       setActiveExpected([]);
       return;
     }
@@ -121,6 +215,23 @@ export default function Receiving() {
         ref: product.ref,
         manufacturer: product.manufacturer,
         barcode: product.barcode ?? scannedBarcode,
+      });
+      setPendingBarcode(null);
+      setPendingReceivingFlow(false);
+      toast.success('Продолжите приёмку: укажите партию, срок и количество.');
+    },
+    [applyScannedProduct],
+  );
+
+  const resumeReceivingFlowDraft = useCallback(
+    (draft: ReceivingCreateProductDraft) => {
+      const draftId = createDraftProductId(draft.barcode);
+      applyScannedProduct({
+        id: draftId,
+        name: draft.name,
+        ref: draft.ref,
+        manufacturer: draft.manufacturer,
+        barcode: draft.barcode,
       });
       setPendingBarcode(null);
       setPendingReceivingFlow(false);
@@ -199,31 +310,46 @@ export default function Receiving() {
     setCreateModalOpen(false);
     setPendingBarcode(null);
     setPendingReceivingFlow(false);
+    const { cart, form } = useReceivingDraftStore.getState();
+    if (
+      cart.length === 0 &&
+      form.scannedProduct &&
+      isDraftProductId(form.scannedProduct.id)
+    ) {
+      clearScannedProduct();
+    }
     restoreFocus();
   };
 
-  const handleProductCreated = (product: QuickCreateProductResult) => {
-    if (!pendingBarcode) return;
-    resumeReceivingFlow(product, pendingBarcode);
+  const handleProductDraftSubmitted = (draft: ReceivingCreateProductDraft) => {
+    setCreateModalOpen(false);
+    setPendingBarcode(null);
+    setPendingReceivingFlow(false);
+    resumeReceivingFlowDraft(draft);
     restoreFocus();
   };
+
+  const expiryIso = ruToIsoDate(expiryText) ?? expiry;
 
   const validateLine = useCallback((): string | null => {
-    if (!scannedProduct || !lot.trim() || !expiry || !qty) {
+    if (!scannedProduct || !lot.trim() || !expiryIso || !qty) {
+      if (scannedProduct && lot.trim() && qty && expiryText.trim().length === 10 && !ruToIsoDate(expiryText)) {
+        return 'Некорректная дата срока годности — проверьте день/месяц (ДД.ММ.ГГГГ)';
+      }
       return 'Заполните обязательные атрибуты партии: LOT / Партия, срок, кол-во.';
     }
     const quantity = Number(qty);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return 'Укажите корректное количество';
     }
-    const expiryDate = new Date(expiry);
+    const expiryDate = new Date(expiryIso);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     if (expiryDate < today) {
       return 'Срок годности не может быть в прошлом';
     }
     return null;
-  }, [scannedProduct, lot, expiry, qty]);
+  }, [scannedProduct, lot, expiryIso, qty, expiryText]);
 
   const buildCartItemFromForm = useCallback((): ReceivingCartItem | null => {
     const error = validateLine();
@@ -241,7 +367,7 @@ export default function Receiving() {
       barcode: scannedProduct.barcode,
       manufacturer: scannedProduct.manufacturer,
       lotNumber: lot.trim().toUpperCase(),
-      expiryDate: expiry,
+      expiryDate: expiryIso,
       quantity: Number(qty),
       location: location.trim() || null,
       expectedReceiptId: linkedExpectedId,
@@ -253,7 +379,7 @@ export default function Receiving() {
     validateLine,
     scannedProduct,
     lot,
-    expiry,
+    expiryIso,
     qty,
     location,
     linkedExpectedId,
@@ -271,6 +397,7 @@ export default function Receiving() {
       linkedExpectedId: null,
       editingCartId: null,
     });
+    setExpiryText('');
   }, [setForm]);
 
   const handleAddToCart = useCallback(() => {
@@ -326,9 +453,14 @@ export default function Receiving() {
   );
 
   const handleClearCart = useCallback(() => {
-    clearCart();
-    toast.success('Корзина приёмки очищена');
-  }, [clearCart]);
+    discardReceivingDraft();
+    setPendingBarcode(null);
+    setPendingReceivingFlow(false);
+    setActiveExpected([]);
+    setBatchConfirmOpen(false);
+    toast.success('Черновик приёмки очищен');
+    restoreFocus();
+  }, [restoreFocus]);
 
   const handleBatchConfirmRequest = () => {
     if (cart.length === 0) {
@@ -344,10 +476,22 @@ export default function Receiving() {
 
     const run = async () => {
       const movementIds: string[] = [];
+      const resolvedDraftIds = new Map<string, string>();
+
+      const productIdForItem = async (item: ReceivingCartItem): Promise<string> => {
+        if (!isDraftProductId(item.productId)) return item.productId;
+        const cached = resolvedDraftIds.get(item.productId);
+        if (cached) return cached;
+        const realId = await resolveReceivingProductId(item);
+        resolvedDraftIds.set(item.productId, realId);
+        return realId;
+      };
+
       for (const item of cart) {
+        const productId = await productIdForItem(item);
         const result = await receiveInventory({
           barcode: item.barcode,
-          productId: item.productId,
+          productId,
           lotNumber: item.lotNumber,
           expiryDate: item.expiryDate,
           quantity: item.quantity,
@@ -357,7 +501,9 @@ export default function Receiving() {
         movementIds.push(result.movementId);
       }
       const count = cart.length;
-      clearAllDraft();
+      discardReceivingDraft();
+      setPendingBarcode(null);
+      setPendingReceivingFlow(false);
       setActiveExpected([]);
       setBarcode('');
       toast.success(
@@ -381,7 +527,10 @@ export default function Receiving() {
     }
   };
 
-  const canAddToCart = Boolean(scannedProduct && lot.trim() && expiry && qty && !submitting);
+  // Enable button when user filled fields; actual date validity is enforced in validateLine().
+  const canAddToCart = Boolean(
+    scannedProduct && lot.trim() && (expiryText.trim() || expiryIso) && qty && !submitting,
+  );
   const batchTotalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
   const showSplitLayout = Boolean(scannedProduct || cart.length > 0);
   const hasPersistedDraft = cart.length > 0 || Boolean(scannedProduct);
@@ -392,7 +541,7 @@ export default function Receiving() {
         open={createModalOpen && !!pendingBarcode}
         barcode={pendingBarcode ?? ''}
         onClose={handleCreateModalClose}
-        onCreated={handleProductCreated}
+        onSubmitDraft={handleProductDraftSubmitted}
       />
 
       <div className="shrink-0 flex flex-col items-center text-center">
@@ -506,10 +655,41 @@ export default function Receiving() {
                       Годен до
                     </label>
                     <input
-                      type="date"
-                      min={new Date().toISOString().slice(0, 10)}
-                      value={expiry}
-                      onChange={(e) => setForm({ expiry: e.target.value })}
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="ДД.ММ.ГГГГ"
+                      value={expiryText}
+                      onChange={(e) => {
+                        const normalized = normalizeExpiryInput(e.target.value);
+                        setExpiryText(normalized);
+                        const iso = ruToIsoDate(normalized);
+                        setForm({ expiry: iso ?? '' });
+                      }}
+                      onBlur={() => {
+                        const iso = ruToIsoDate(expiryText);
+                        if (iso) {
+                          setExpiryText(isoToRuDate(iso));
+                          setForm({ expiry: iso });
+                          return;
+                        }
+
+                        // If user entered 8 digits, try auto-correct (clamp month/day) instead of leaving a confusing invalid state.
+                        const digits = expiryText.replace(/\D/g, '');
+                        if (digits.length === 8) {
+                          const fixed = clampExpiryParts({
+                            dd: digits.slice(0, 2),
+                            mm: digits.slice(2, 4),
+                            yyyy: digits.slice(4, 8),
+                          });
+                          const candidate = `${fixed.dd}.${fixed.mm}.${fixed.yyyy ?? ''}`;
+                          const fixedIso = ruToIsoDate(candidate);
+                          if (fixedIso) {
+                            setExpiryText(candidate);
+                            setForm({ expiry: fixedIso });
+                            return;
+                          }
+                        }
+                      }}
                       className="h-10 px-3 border border-slate-300 rounded bg-slate-50 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none font-mono text-sm text-slate-800 uppercase"
                     />
                   </div>
@@ -545,10 +725,9 @@ export default function Receiving() {
                     </p>
                   </div>
                   <div className="md:col-span-2">
-                    <ReceivingProductRu
-                      productId={scannedProduct.id}
-                      userRole={userRole}
-                    />
+                    {!isDraftProductId(scannedProduct.id) && (
+                      <ReceivingProductRu productId={scannedProduct.id} userRole={userRole} />
+                    )}
                   </div>
                 </div>
 
@@ -624,7 +803,13 @@ export default function Receiving() {
               >
                 <Button
                   variant="outline"
-                  onClick={clearScannedProduct}
+                  onClick={() => {
+                    clearScannedProduct();
+                    setExpiryText('');
+                    setPendingBarcode(null);
+                    setPendingReceivingFlow(false);
+                    setActiveExpected([]);
+                  }}
                   className="h-10 text-xs font-semibold border-slate-300 text-slate-600 bg-white"
                   disabled={submitting}
                 >

@@ -57,6 +57,34 @@ export const GRID_MIN_NUMERIC = 96;
 /** CSS class for badge / status renderers (no ellipsis, clipped to column) */
 export const GRID_CELL_CLASS_BADGE = 'ag-cell-badge';
 
+/** Paired metric cells on the products grid (ОСТАТОК + БЛИЖАЙШИЙ СРОК). */
+export const PRODUCTS_METRIC_CELL_CLASS = 'ag-cell-products-metric';
+
+/**
+ * Centered metric column on the nomenclature grid — same AG structure for qty and expiry
+ * (no numericColumn type → avoids extra theme styles on «Остаток» only).
+ */
+export function productsPairedMetricColumnDef<T>(overrides: ColDef<T>): ColDef<T> {
+  const {
+    width: _width,
+    flex = GRID_FLEX_NARROW,
+    minWidth,
+    maxWidth,
+    headerClass,
+    cellClass,
+    ...rest
+  } = overrides;
+  return centeredColumnDef({
+    flex,
+    minWidth: minWidth ?? GRID_MIN_NUMERIC,
+    maxWidth: maxWidth ?? 140,
+    suppressSizeToFit: true,
+    headerClass: mergeClasses('ag-header-numeric', headerClass),
+    cellClass: mergeClasses(PRODUCTS_METRIC_CELL_CLASS, 'ag-cell-numeric', cellClass),
+    ...rest,
+  });
+}
+
 export const compactGridThemeStyle: CSSProperties = {
   '--ag-header-background-color': '#f8fafc',
   '--ag-header-foreground-color': '#64748b',

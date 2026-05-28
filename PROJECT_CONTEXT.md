@@ -31,14 +31,14 @@ MED_Logistics/
 
 - **Скрипт дампа Postgres (prod)**: `deploy/scripts/backup-postgres.sh`
   - Пишет gzip-дампы в `deploy/backups/` (папка в `.gitignore`)
-  - Формат имени: `<db>_<UTC-timestamp>.sql.gz`, пример: `med_warehouse_20260526T143639Z.sql.gz`
+  - Формат имени: `<db>_<UTC-timestamp>.sql.gz`, пример: `med_warehouse_20260528T104456Z.sql.gz`
 - **Исторические копии (в репозитории)**: `backup/` (может включать .sql/.sql.gz, см. `backup/README.md`)
 
-### Актуальный бекап за 2026-05-26
+### Актуальный бекап за 2026-05-28
 
-- **Архив кода на сервере**: `/home/adminmed/backups/MED_Logistics_2026-05-26_143639.tar.gz`
-- **Дамп БД (копия в репозитории)**: `backup/med_warehouse_prod_2026-05-26_143639.sql.gz`
-- **Git ветка бекапа**: `backup/2026-05-26` (обновляется по мере правок)
+- **Архив кода на сервере**: `/home/adminmed/backups/2026-05-28/MED_Logistics_2026-05-28_104456.tar.gz`
+- **Дамп БД (копия в репозитории)**: `backup/med_warehouse_prod_2026-05-28_104456.sql.gz`
+- **Git ветка бекапа**: `backup/2026-05-28` (обновляется по мере правок)
 
 ## Backend (NestJS)
 

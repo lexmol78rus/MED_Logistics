@@ -26,6 +26,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: med_warehouse_api
+    command: ["node", "dist/main.js"]
     restart: unless-stopped
     depends_on:
       postgres:

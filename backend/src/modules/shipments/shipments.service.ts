@@ -7,8 +7,16 @@ import {
 import { CompleteShipmentPickingDto } from './dto/complete-shipment-picking.dto';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ShipmentAssemblyReservationService } from './shipment-assembly-reservation.service';
+import { shipmentReservationActor } from './shipment-reservation.actor';
 import { decimalToNumber } from '../../common/utils/decimal.util';
 import { findProductIdsByRefs, normalizeProductRef } from '../../common/utils/product-ref.util';
+import {
+  isEditableShipmentStatus,
+  shipmentStatusAfterRefValidation,
+  validateShipmentItemRefs,
+  type ShipmentRefValidation,
+} from '../../common/utils/shipment-ref-validation.util';
 import { CreateShipmentDto, CreateShipmentItemDto } from './dto/create-shipment.dto';
 import {
   countRefLinkSummary,
@@ -69,7 +77,10 @@ const shipmentItemInclude = {
 
 @Injectable()
 export class ShipmentsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assemblyReservations: ShipmentAssemblyReservationService,
+  ) {}
 
   private async productIdByRefForItems(items: CreateShipmentItemDto[]): Promise<Map<string, string>> {
     return findProductIdsByRefs(
@@ -156,8 +167,9 @@ export class ShipmentsService {
       take: 200,
       include: {
         counterparty: { select: { id: true, name: true, type: true } },
+        legalEntity: { select: { id: true, name: true, type: true } },
         contract: { select: { id: true, number: true } },
-        items: { select: { id: true } },
+        items: { select: { id: true, name: true, code: true } },
       },
     });
 
@@ -166,6 +178,7 @@ export class ShipmentsService {
         id: s.id,
         status: s.status,
         counterparty: s.counterparty,
+        legalEntity: s.legalEntity,
         contract: s.contract,
         note: s.note,
         createdBy: s.createdBy,
@@ -179,6 +192,8 @@ export class ShipmentsService {
         writeoffCompletedAt: s.writeoffCompletedAt?.toISOString() ?? null,
         createdAt: s.createdAt.toISOString(),
         itemsCount: s.items.length,
+        itemNames: s.items.map((i) => i.name),
+        itemRefs: s.items.map((i) => i.code?.trim()).filter((c): c is string => !!c),
       })),
     };
   }
@@ -188,6 +203,7 @@ export class ShipmentsService {
       where: { id },
       include: {
         counterparty: { select: { id: true, name: true, inn: true, kpp: true, type: true } },
+        legalEntity: { select: { id: true, name: true, inn: true, kpp: true, type: true } },
         contract: { select: { id: true, number: true, date: true, title: true } },
         items: { orderBy: { contractLineNo: 'asc' }, include: shipmentItemInclude },
       },
@@ -199,6 +215,7 @@ export class ShipmentsService {
       id: s.id,
       status: s.status,
       counterpartyId: s.counterpartyId,
+      legalEntityId: s.legalEntityId,
       contractId: s.contractId,
       note: s.note,
       createdBy: s.createdBy,
@@ -213,6 +230,7 @@ export class ShipmentsService {
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
       counterparty: s.counterparty,
+      legalEntity: s.legalEntity,
       contract: s.contract
         ? { ...s.contract, date: s.contract.date?.toISOString() ?? null }
         : null,
@@ -221,16 +239,31 @@ export class ShipmentsService {
     };
   }
 
-  async create(dto: CreateShipmentDto, createdBy?: string) {
+  private async requireLegalEntityId(id: string): Promise<void> {
+    const row = await this.prisma.counterparty.findUnique({ where: { id }, select: { id: true, type: true } });
+    if (!row || row.type !== 'LEGAL_ENTITY') {
+      throw new BadRequestException('Некорректное юр. лицо для отгрузки');
+    }
+  }
+
+  async create(dto: CreateShipmentDto, createdBy?: string, createdByUserId?: string) {
     const items = sanitizeCreateItems(dto.items ?? []);
     if (!items.length) throw new BadRequestException('Пустая отгрузка');
 
+    if (!dto.legalEntityId) {
+      throw new BadRequestException('Выберите юр. лицо от которого отгружаем');
+    }
+    await this.requireLegalEntityId(dto.legalEntityId);
+
     const refMap = await this.productIdByRefForItems(items);
+    const refValidation = validateShipmentItemRefs(items, refMap);
+    const targetStatus = shipmentStatusAfterRefValidation(refValidation.isDraft);
 
     const shipment = await this.prisma.shipment.create({
       data: {
-        status: ShipmentStatus.NEW,
+        status: targetStatus,
         counterpartyId: dto.counterpartyId ?? null,
+        legalEntityId: dto.legalEntityId ?? null,
         contractId: dto.contractId ?? null,
         note: dto.note?.trim() || null,
         createdBy: createdBy ?? null,
@@ -252,28 +285,51 @@ export class ShipmentsService {
       },
     });
 
-    return { id: shipment.id };
+    const savedItems = await this.prisma.shipmentItem.findMany({
+      where: { shipmentId: shipment.id },
+      select: { productId: true, quantity: true },
+    });
+    await this.assemblyReservations.syncForShipment(
+      shipment.id,
+      this.assemblyReservations.aggregateLines(savedItems),
+      shipmentReservationActor(createdBy, createdByUserId),
+    );
+
+    const reservation = this.summarizeReservationLines(
+      this.assemblyReservations.aggregateLines(savedItems),
+    );
+
+    return { id: shipment.id, status: targetStatus, reservation, refValidation };
   }
 
-  async update(id: string, dto: CreateShipmentDto, actorEmail?: string) {
+  async update(id: string, dto: CreateShipmentDto, actorEmail?: string, actorUserId?: string) {
     const items = sanitizeCreateItems(dto.items ?? []);
     if (!items.length) throw new BadRequestException('Пустая отгрузка');
 
+    if (!dto.legalEntityId) {
+      throw new BadRequestException('Выберите юр. лицо от которого отгружаем');
+    }
+    await this.requireLegalEntityId(dto.legalEntityId);
+
     const existing = await this.prisma.shipment.findUnique({ where: { id }, select: { id: true, status: true } });
     if (!existing) throw new NotFoundException('Отгрузка не найдена');
-    if (existing.status !== ShipmentStatus.NEW) {
-      throw new BadRequestException('Редактирование доступно только для статуса «Новый»');
+    if (!isEditableShipmentStatus(existing.status)) {
+      throw new BadRequestException('Редактирование доступно только для черновика или статуса «Новый»');
     }
 
     const refMap = await this.productIdByRefForItems(items);
+    const refValidation = validateShipmentItemRefs(items, refMap);
+    const targetStatus = shipmentStatusAfterRefValidation(refValidation.isDraft);
 
     const updated = await this.prisma.$transaction(async (tx) => {
       await tx.shipmentItem.deleteMany({ where: { shipmentId: id } });
 
-      return tx.shipment.update({
+      const row = await tx.shipment.update({
         where: { id },
         data: {
+          status: targetStatus,
           counterpartyId: dto.counterpartyId ?? null,
+          legalEntityId: dto.legalEntityId ?? null,
           contractId: dto.contractId ?? null,
           note: dto.note?.trim() || null,
           createdBy: actorEmail ?? null,
@@ -295,9 +351,47 @@ export class ShipmentsService {
         },
         select: { id: true, status: true, updatedAt: true },
       });
+
+      const savedItems = await tx.shipmentItem.findMany({
+        where: { shipmentId: id },
+        select: { productId: true, quantity: true },
+      });
+      await this.assemblyReservations.syncForShipment(
+        id,
+        this.assemblyReservations.aggregateLines(savedItems),
+        shipmentReservationActor(actorEmail, actorUserId),
+        tx,
+      );
+
+      return row;
     });
 
-    return { ok: true as const, id: updated.id, status: updated.status, updatedAt: updated.updatedAt.toISOString() };
+    const reservation = this.summarizeReservationLines(
+      this.assemblyReservations.aggregateLines(
+        await this.prisma.shipmentItem.findMany({
+          where: { shipmentId: id },
+          select: { productId: true, quantity: true },
+        }),
+      ),
+    );
+
+    return {
+      ok: true as const,
+      id: updated.id,
+      status: updated.status,
+      updatedAt: updated.updatedAt.toISOString(),
+      reservation,
+      refValidation,
+    };
+  }
+
+  private summarizeReservationLines(
+    lines: Array<{ productId: string; quantity: number }>,
+  ): { lines: number; quantity: number } {
+    return {
+      lines: lines.length,
+      quantity: lines.reduce((sum, line) => sum + line.quantity, 0),
+    };
   }
 
   async sendToPicking(id: string, actorEmail?: string) {
@@ -306,11 +400,34 @@ export class ShipmentsService {
       include: { counterparty: { select: { name: true } } },
     });
     if (!s) throw new NotFoundException('Отгрузка не найдена');
+    if (s.status === ShipmentStatus.DRAFT) {
+      throw new BadRequestException(
+        'Отгрузка в черновике: исправьте REF, которых нет в номенклатуре, и сохраните снова',
+      );
+    }
     if (s.status !== ShipmentStatus.NEW) {
       throw new BadRequestException('Отгрузка уже отправлена на сборку или собрана');
     }
 
     await this.refreshItemProductLinks(id);
+    const items = await this.prisma.shipmentItem.findMany({
+      where: { shipmentId: id },
+      select: { code: true, productId: true },
+    });
+    const refMap = await findProductIdsByRefs(
+      this.prisma,
+      items.map((i) => i.code),
+    );
+    const refValidation = validateShipmentItemRefs(items, refMap);
+    if (refValidation.isDraft) {
+      await this.prisma.shipment.update({
+        where: { id },
+        data: { status: ShipmentStatus.DRAFT },
+      });
+      throw new BadRequestException(
+        `REF не найдены в номенклатуре: ${refValidation.notFoundRefs.join(', ')}`,
+      );
+    }
 
     const updated = await this.prisma.shipment.update({
       where: { id },
@@ -552,6 +669,8 @@ export class ShipmentsService {
       },
     });
 
+    await this.assemblyReservations.releaseForShipment(shipmentId);
+
     const customerName = s.counterparty?.name ?? '—';
     const managers = await this.prisma.user.findMany({
       where: {
@@ -612,6 +731,7 @@ export class ShipmentsService {
       where: { id },
       include: {
         counterparty: { select: { name: true, inn: true, kpp: true } },
+        legalEntity: { select: { name: true, inn: true, kpp: true } },
         contract: { select: { number: true, date: true, title: true } },
         items: { orderBy: { contractLineNo: 'asc' }, include: shipmentItemInclude },
       },
@@ -636,6 +756,7 @@ export class ShipmentsService {
       pickingCompleteComment: s.pickingCompleteComment,
       writeoffCompletedAt: s.writeoffCompletedAt?.toISOString() ?? null,
       counterparty: s.counterparty ?? null,
+      legalEntity: s.legalEntity ?? null,
       contract: s.contract
         ? { ...s.contract, date: s.contract.date?.toISOString() ?? null }
         : null,
@@ -715,8 +836,8 @@ export class ShipmentsService {
   async remove(id: string) {
     const existing = await this.prisma.shipment.findUnique({ where: { id }, select: { id: true, status: true } });
     if (!existing) throw new NotFoundException('Отгрузка не найдена');
-    if (existing.status !== ShipmentStatus.NEW) {
-      throw new BadRequestException('Удаление доступно только для статуса «Новый»');
+    if (!isEditableShipmentStatus(existing.status)) {
+      throw new BadRequestException('Удаление доступно только для черновика или статуса «Новый»');
     }
     await this.prisma.shipment.delete({ where: { id } });
     return { ok: true as const };

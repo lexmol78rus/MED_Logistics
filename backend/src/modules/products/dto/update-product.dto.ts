@@ -24,6 +24,11 @@ export class UpdateProductDto {
   barcode?: string;
 
   @IsOptional()
+  @IsString()
+  @MaxLength(14)
+  gtin?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(0)
   minStock?: number;

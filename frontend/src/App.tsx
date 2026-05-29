@@ -9,6 +9,7 @@ import Login from './pages/Login';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
 import Products from './pages/Products';
+import ProductNames from './pages/ProductNames';
 import ProductDetails from './pages/ProductDetails';
 import Lots from './pages/Lots';
 import Movements from './pages/Movements';
@@ -25,6 +26,7 @@ import Shipments from './pages/Shipments';
 import ShipmentPrint from './pages/ShipmentPrint';
 import Customers from './pages/Customers';
 import Suppliers from './pages/Suppliers';
+import LegalEntities from './pages/LegalEntities';
 import Forbidden from './pages/Forbidden';
 import { Toaster } from '@/components/ui/sonner';
 import BuildVersionCheck from './components/BuildVersionCheck';
@@ -48,6 +50,7 @@ export default function App() {
               <Route element={<RequireRole />}>
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/products" element={<Products />} />
+                <Route path="/product-names" element={<ProductNames />} />
                 <Route path="/products/:id" element={<ProductDetails />} />
                 <Route path="/lots" element={<Lots />} />
                 <Route path="/receiving" element={<Receiving />} />
@@ -59,6 +62,7 @@ export default function App() {
                 <Route path="/shipments/:id/print" element={<ShipmentPrint />} />
                 <Route path="/counterparties/customers" element={<Customers />} />
                 <Route path="/counterparties/suppliers" element={<Suppliers />} />
+                <Route path="/counterparties/legal-entities" element={<LegalEntities />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/settings/writeoff-destinations" element={<WriteOffDestinations />} />
                 <Route path="/users" element={<Users />} />
@@ -73,7 +77,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </AuthHydrationGate>
-      <Toaster theme="dark" position="top-right" />
+      <Toaster />
     </Router>
   );
 }

@@ -7,6 +7,7 @@ import { ApiError } from '../../lib/api/client';
 import { canEditProduct } from '../../lib/rbac/permissions';
 import { useUserStore } from '../../stores/userStore';
 import { toast } from 'sonner';
+import ProductNameAutocomplete from '../product-names/ProductNameAutocomplete';
 
 type ProductFormState = {
   ref: string;
@@ -151,10 +152,18 @@ export default function ProductFormDialog({
             </p>
           </div>
           <label className="text-[10px] font-bold uppercase text-slate-500">Наименование</label>
-          <input
-            className="h-9 rounded border border-slate-300 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          <ProductNameAutocomplete
             value={form.name}
-            onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+            onChange={(name) => setForm((f) => ({ ...f, name }))}
+            onPick={(pick) =>
+              setForm((f) => ({
+                ...f,
+                name: pick.name,
+                manufacturer: pick.manufacturer?.trim()
+                  ? pick.manufacturer
+                  : f.manufacturer,
+              }))
+            }
           />
           <label className="text-[10px] font-bold uppercase text-slate-500">Изготовитель</label>
           <input

@@ -8,6 +8,7 @@ import {
   type InventoryBalanceBreakdown,
 } from '../../common/utils/inventory-balance.util';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ShipmentAssemblyReservationService } from '../shipments/shipment-assembly-reservation.service';
 import { InventoryBalanceQueryDto } from './dto/inventory-balance-query.dto';
 
 export type InventoryBalanceRow = {
@@ -25,7 +26,10 @@ export type InventoryBalanceRow = {
 
 @Injectable()
 export class InventoryBalanceService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly assemblyReservations: ShipmentAssemblyReservationService,
+  ) {}
 
   async getBalance(
     query: InventoryBalanceQueryDto,
@@ -145,7 +149,15 @@ export class InventoryBalanceService {
       }),
     );
 
-    return mergeBalances(balances);
+    const merged = mergeBalances(balances);
+    const assemblyReserved = await this.assemblyReservations.getReservedTotalByProductId(productId);
+    if (assemblyReserved <= 0) return merged;
+
+    return {
+      ...merged,
+      reservedQuantity: merged.reservedQuantity + assemblyReserved,
+      availableQuantity: Math.max(0, merged.availableQuantity - assemblyReserved),
+    };
   }
 
   async getLotBalance(lotId: string): Promise<InventoryBalanceBreakdown> {

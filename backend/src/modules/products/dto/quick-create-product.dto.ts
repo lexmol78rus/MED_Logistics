@@ -20,4 +20,9 @@ export class QuickCreateProductDto {
   @IsString()
   @MaxLength(255)
   manufacturer?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(14)
+  gtin?: string;
 }

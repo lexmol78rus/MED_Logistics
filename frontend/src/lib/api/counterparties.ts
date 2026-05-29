@@ -2,7 +2,7 @@ import { apiBaseUrl } from '../../config/env';
 import { apiFetch } from './client';
 import { useAuthStore } from '../../stores/authStore';
 
-export type CounterpartyType = 'CUSTOMER' | 'SUPPLIER';
+export type CounterpartyType = 'CUSTOMER' | 'SUPPLIER' | 'LEGAL_ENTITY';
 
 export type Counterparty = {
   id: string;

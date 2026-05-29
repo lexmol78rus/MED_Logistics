@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import * as XLSX from 'xlsx';
+import { Search, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
@@ -21,12 +22,15 @@ import {
   shipmentStatusBadge,
   updateShipment,
   type CreateShipmentPayload,
+  type ShipmentItem,
   type ShipmentListItem,
   type ShipmentPickingOutcome,
   type ShipmentStatus,
 } from '../lib/api/shipments';
 import ShipmentPickingCompleteDialog from '../components/shipments/ShipmentPickingCompleteDialog';
+import ShipmentDraftRefPopover from '../components/shipments/ShipmentDraftRefPopover';
 import ShipmentWriteoffNavigateDialog from '../components/shipments/ShipmentWriteoffNavigateDialog';
+import type { ShipmentRefLinkStatus } from '../lib/shipments/shipment-ref-link';
 import { canWriteoff } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
 import {
@@ -38,12 +42,57 @@ import {
 } from '../lib/api/counterparties';
 import ShipmentWarehouseMessageBanner from '../components/shipments/ShipmentWarehouseMessageBanner';
 import { resolveWarehouseMessageMeta } from '../lib/shipments/warehouse-message';
+import {
+  buildShipmentsListSearch,
+  parseShipmentsListTab,
+  type ShipmentsListNavState,
+} from '../lib/shipments/list-navigation';
 
 type CreateMode = 'manual' | 'template' | 'contract';
 
 type DraftItem = CreateShipmentPayload['items'][number] & {
   contractQty?: string;
+  refLinkStatus?: ShipmentRefLinkStatus;
 };
+
+function isEditableShipmentStatus(status: ShipmentStatus): boolean {
+  return status === 'DRAFT' || status === 'NEW';
+}
+
+function mapDetailItemsToDraft(items: ShipmentItem[]): DraftItem[] {
+  return items.map((it, idx) => ({
+    contractLineNo: it.contractLineNo ?? idx + 1,
+    name: it.name,
+    ...(it.code ? { code: it.code } : {}),
+    ...(it.unit ? { unit: it.unit } : {}),
+    ...(it.vatRate ? { vatRate: it.vatRate } : {}),
+    ...(it.priceWithVat ? { priceWithVat: it.priceWithVat } : {}),
+    quantity: it.quantity,
+    ...(it.sum ? { sum: it.sum } : {}),
+    ...(it.managerNote ? { managerNote: it.managerNote } : {}),
+    refLinkStatus: it.refLinkStatus,
+  }));
+}
+
+function isDraftRefRow(item: DraftItem): boolean {
+  return item.refLinkStatus === 'NOT_FOUND';
+}
+
+function revealDraftRefPopover(
+  items: DraftItem[],
+  setPopover: (value: { rowIndex: number; refCode: string; triggerKey: number } | null) => void,
+) {
+  const rowIndex = items.findIndex((it) => isDraftRefRow(it));
+  if (rowIndex < 0) {
+    setPopover(null);
+    return;
+  }
+  setPopover({
+    rowIndex,
+    refCode: items[rowIndex]?.code ?? '',
+    triggerKey: Date.now(),
+  });
+}
 
 function pickHeaderIndex(headers: string[], predicate: (h: string) => boolean): number {
   const idx = headers.findIndex((h) => predicate(h.trim().toLowerCase()));
@@ -260,6 +309,24 @@ function isPlausibleItemName(name: string): boolean {
   return true;
 }
 
+function buildDraftPayloadItems(items: DraftItem[]): CreateShipmentPayload['items'] {
+  return items.map((it, idx) => ({
+    name: it.name.trim(),
+    ...(it.code?.trim() ? { code: it.code.trim() } : {}),
+    ...(it.unit?.trim() ? { unit: it.unit.trim() } : {}),
+    ...(it.vatRate?.trim() ? { vatRate: it.vatRate.trim() } : {}),
+    ...(it.priceWithVat?.trim() ? { priceWithVat: it.priceWithVat.trim() } : {}),
+    quantity: (it.quantity ?? '').trim() || '1',
+    ...(it.sum?.trim() ? { sum: it.sum.trim() } : {}),
+    contractLineNo: it.contractLineNo ?? idx + 1,
+    ...(it.managerNote?.trim() ? { managerNote: it.managerNote.trim() } : {}),
+  }));
+}
+
+function draftItemsForSave(items: DraftItem[]): DraftItem[] {
+  return items.filter((it) => isPlausibleItemName(it.name));
+}
+
 function dedupeDraftItemsByLine(items: DraftItem[]): DraftItem[] {
   const byLine = new Map<number, DraftItem>();
   for (const it of items) {
@@ -279,10 +346,33 @@ function filterShipmentsByTab(
   tab: ShipmentStatus | 'ALL',
 ): ShipmentListItem[] {
   if (tab === 'ALL') return list;
+  if (tab === 'NEW') {
+    return list.filter((s) => s.status === 'NEW' || s.status === 'DRAFT');
+  }
   if (tab === 'PICKING') {
     return list.filter((s) => s.status === 'PICKING' || s.status === 'PICKING_ON_HOLD');
   }
   return list.filter((s) => s.status === tab);
+}
+
+function shipmentMatchesListSearch(s: ShipmentListItem, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  if ((s.counterparty?.name ?? '').toLowerCase().includes(q)) return true;
+  if ((s.legalEntity?.name ?? '').toLowerCase().includes(q)) return true;
+  if ((s.contract?.number ?? '').toLowerCase().includes(q)) return true;
+  for (const name of s.itemNames ?? []) {
+    if (name.toLowerCase().includes(q)) return true;
+  }
+  for (const ref of s.itemRefs ?? []) {
+    if (ref.toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
+
+function filterShipmentsByListSearch(list: ShipmentListItem[], query: string): ShipmentListItem[] {
+  if (!query.trim()) return list;
+  return list.filter((s) => shipmentMatchesListSearch(s, query));
 }
 
 function computeShipmentStatusCounts(list: ShipmentListItem[]) {
@@ -292,21 +382,26 @@ function computeShipmentStatusCounts(list: ShipmentListItem[]) {
     if (s.status === 'PICKING_ON_HOLD') onHold += 1;
     if (s.status === 'PICKING' || s.status === 'PICKING_ON_HOLD') c.PICKING += 1;
     else if (s.status === 'PICKED') c.PICKED += 1;
-    else if (s.status === 'NEW') c.NEW += 1;
+    else if (s.status === 'NEW' || s.status === 'DRAFT') c.NEW += 1;
   }
   return { ...c, onHold } as { ALL: number; NEW: number; PICKING: number; PICKED: number; onHold: number };
 }
 
 export default function Shipments() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const userRole = useUserStore((s) => s.user?.role ?? null);
   const templateFileRef = useRef<HTMLInputElement | null>(null);
   const contractQueryRef = useRef<HTMLInputElement | null>(null);
   const createMenuRef = useRef<HTMLDivElement | null>(null);
+  const draftRefInputRefs = useRef<Map<number, HTMLInputElement>>(new Map());
   const [allItems, setAllItems] = useState<ShipmentListItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [creating, setCreating] = useState(false);
-  const [filter, setFilter] = useState<ShipmentStatus | 'ALL'>('ALL');
+  const [filter, setFilter] = useState<ShipmentStatus | 'ALL'>(() =>
+    parseShipmentsListTab(searchParams.get('tab')),
+  );
+  const [listSearch, setListSearch] = useState(() => searchParams.get('q') ?? '');
   const [deleteTarget, setDeleteTarget] = useState<ShipmentListItem | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [warehouseAction, setWarehouseAction] = useState<{
@@ -328,6 +423,8 @@ export default function Shipments() {
   const [draftNote, setDraftNote] = useState('');
   const [customers, setCustomers] = useState<Counterparty[]>([]);
   const [customerId, setCustomerId] = useState('');
+  const [legalEntities, setLegalEntities] = useState<Counterparty[]>([]);
+  const [legalEntityId, setLegalEntityId] = useState('');
   const [contractQuery, setContractQuery] = useState('');
   const [contractId, setContractId] = useState('');
   const [contractOptions, setContractOptions] = useState<
@@ -337,6 +434,11 @@ export default function Shipments() {
   const [contractsLoading, setContractsLoading] = useState(false);
   const [contractsLoadedForCustomer, setContractsLoadedForCustomer] = useState<string | null>(null);
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
+  const [draftRefPopover, setDraftRefPopover] = useState<{
+    rowIndex: number;
+    refCode: string;
+    triggerKey: number;
+  } | null>(null);
 
   const load = async () => {
     setLoading(true);
@@ -355,10 +457,38 @@ export default function Shipments() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const items = useMemo(
-    () => filterShipmentsByTab(allItems, filter),
-    [allItems, filter],
-  );
+  const writeListParamsToUrl = (q: string, tab: ShipmentStatus | 'ALL') => {
+    const params = new URLSearchParams();
+    const trimmed = q.trim();
+    if (trimmed) params.set('q', trimmed);
+    if (tab !== 'ALL') params.set('tab', tab);
+    setSearchParams(params, { replace: true });
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => writeListParamsToUrl(listSearch, filter), 300);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listSearch, filter]);
+
+  useEffect(() => {
+    const q = searchParams.get('q') ?? '';
+    const tab = parseShipmentsListTab(searchParams.get('tab'));
+    setListSearch((prev) => (prev !== q ? q : prev));
+    setFilter((prev) => (prev !== tab ? tab : prev));
+  }, [searchParams]);
+
+  const openShipmentView = (shipmentId: string) => {
+    writeListParamsToUrl(listSearch, filter);
+    const listSearchQuery = buildShipmentsListSearch(listSearch, filter);
+    const navState: ShipmentsListNavState = { listSearch: listSearchQuery };
+    navigate(`/shipments/${shipmentId}/print`, { state: navState });
+  };
+
+  const items = useMemo(() => {
+    const byTab = filterShipmentsByTab(allItems, filter);
+    return filterShipmentsByListSearch(byTab, listSearch);
+  }, [allItems, filter, listSearch]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -385,6 +515,7 @@ export default function Shipments() {
     setDraftItems([]);
     setDraftNote('');
     setCustomerId('');
+    setLegalEntityId('');
     setContractId('');
     setContractQuery('');
     setContractOptions([]);
@@ -393,6 +524,12 @@ export default function Shipments() {
     try {
       const res = await fetchCounterparties('CUSTOMER');
       setCustomers(res.items.filter((c) => c.isActive));
+    } catch {
+      /* ignore */
+    }
+    try {
+      const res = await fetchCounterparties('LEGAL_ENTITY');
+      setLegalEntities(res.items.filter((c) => c.isActive));
     } catch {
       /* ignore */
     }
@@ -530,47 +667,75 @@ export default function Shipments() {
   };
 
   const submitCreate = async () => {
-    if (!draftItems.length) {
-      toast.error('Добавьте позиции в отгрузку');
+    const itemsToSave = draftItemsForSave(draftItems);
+    if (!itemsToSave.length) {
+      toast.error('Добавьте хотя бы одну позицию с наименованием от 5 символов');
       return;
     }
     if (!customerId) {
       toast.error('Выберите заказчика');
       return;
     }
-    if (draftItems.some((it) => !(it.code ?? '').trim())) {
-      toast.error('Заполните REF для всех позиций');
+    if (!legalEntityId) {
+      toast.error('Выберите юр. лицо от которого отгружаем');
       return;
     }
+    const withoutRef = itemsToSave.filter((it) => !(it.code ?? '').trim());
     setCreating(true);
     try {
-      const payloadItems: CreateShipmentPayload['items'] = draftItems.map((it) => ({
-        name: it.name,
-        ...(it.code ? { code: it.code } : {}),
-        ...(it.unit ? { unit: it.unit } : {}),
-        ...(it.vatRate ? { vatRate: it.vatRate } : {}),
-        ...(it.priceWithVat ? { priceWithVat: it.priceWithVat } : {}),
-        quantity: it.quantity,
-        ...(it.sum ? { sum: it.sum } : {}),
-        ...(it.contractLineNo ? { contractLineNo: it.contractLineNo } : {}),
-        ...(it.managerNote ? { managerNote: it.managerNote } : {}),
-      }));
+      const payloadItems = buildDraftPayloadItems(itemsToSave);
       const payload: CreateShipmentPayload = {
         counterpartyId: customerId,
+        legalEntityId,
         contractId: contractId || undefined,
         note: draftNote.trim() || undefined,
         items: payloadItems,
       };
       if (editingId) {
-        await updateShipment(editingId, payload);
-        toast.success('Отгрузка обновлена');
+        const updated = await updateShipment(editingId, payload);
+        const detail = await fetchShipment(editingId);
+        const mapped = mapDetailItemsToDraft(detail.items);
+        setDraftItems(mapped);
+        if (updated.refValidation.isDraft) {
+          requestAnimationFrame(() => revealDraftRefPopover(mapped, setDraftRefPopover));
+        } else {
+          setDraftRefPopover(null);
+          const { lines, quantity } = updated.reservation;
+          const reservationNote =
+            lines > 0 ? ` · бронь: ${lines} поз., ${quantity} шт.` : '';
+          const refNote =
+            withoutRef.length > 0
+              ? ` · ${withoutRef.length} поз. без REF (без брони в номенклатуре)`
+              : '';
+          toast.success(`Отгрузка сохранена${reservationNote}${refNote}`);
+        }
       } else {
         const created = await createShipment(payload);
-        toast.success('Отгрузка создана');
-        navigate(`/shipments/${created.id}/print`);
+        setEditingId(created.id);
+        const detail = await fetchShipment(created.id);
+        const mapped = mapDetailItemsToDraft(detail.items);
+        setDraftItems(mapped);
+        if (created.refValidation.isDraft) {
+          requestAnimationFrame(() => revealDraftRefPopover(mapped, setDraftRefPopover));
+        } else {
+          setDraftRefPopover(null);
+          const { lines, quantity } = created.reservation;
+          toast.success(
+            lines > 0
+              ? `Отгрузка создана · забронировано ${lines} поз., ${quantity} шт.`
+              : withoutRef.length > 0
+                ? `Отгрузка создана · ${withoutRef.length} поз. без REF`
+                : 'Отгрузка создана',
+          );
+          navigate(`/shipments/${created.id}/print`, {
+            state: {
+              listSearch: buildShipmentsListSearch(listSearch, filter),
+            } satisfies ShipmentsListNavState,
+          });
+          setCreateOpen(false);
+          setEditingId(null);
+        }
       }
-      setCreateOpen(false);
-      setEditingId(null);
       await load();
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : editingId ? 'Не удалось обновить отгрузку' : 'Не удалось создать отгрузку');
@@ -641,8 +806,8 @@ export default function Shipments() {
   };
 
   const editShipment = async (s: ShipmentListItem) => {
-    if (s.status !== 'NEW') {
-      toast.message('Редактирование доступно только для статуса «Новый»');
+    if (!isEditableShipmentStatus(s.status)) {
+      toast.message('Редактирование доступно только для черновика или статуса «Новый»');
       return;
     }
 
@@ -651,27 +816,22 @@ export default function Shipments() {
       const detail = await fetchShipment(s.id);
       setEditingId(detail.id);
       setMode('manual');
-      setDraftItems(
-        detail.items.map((it, idx) => ({
-          contractLineNo: it.contractLineNo ?? idx + 1,
-          name: it.name,
-          ...(it.code ? { code: it.code } : {}),
-          ...(it.unit ? { unit: it.unit } : {}),
-          ...(it.vatRate ? { vatRate: it.vatRate } : {}),
-          ...(it.priceWithVat ? { priceWithVat: it.priceWithVat } : {}),
-          quantity: it.quantity,
-          ...(it.sum ? { sum: it.sum } : {}),
-          ...(it.managerNote ? { managerNote: it.managerNote } : {}),
-        })),
-      );
+      setDraftItems(mapDetailItemsToDraft(detail.items));
       setDraftNote(detail.note ?? '');
       setCustomerId(detail.counterpartyId ?? '');
+      setLegalEntityId(detail.legalEntityId ?? '');
       setContractId(detail.contractId ?? '');
       setContractQuery(detail.contract?.number ?? '');
       setContractOptions([]);
       try {
         const res = await fetchCounterparties('CUSTOMER');
         setCustomers(res.items.filter((c) => c.isActive));
+      } catch {
+        /* ignore */
+      }
+      try {
+        const res = await fetchCounterparties('LEGAL_ENTITY');
+        setLegalEntities(res.items.filter((c) => c.isActive));
       } catch {
         /* ignore */
       }
@@ -757,7 +917,10 @@ export default function Shipments() {
           <button
             key={s}
             type="button"
-            onClick={() => setFilter(s)}
+            onClick={() => {
+              setFilter(s);
+              writeListParamsToUrl(listSearch, s);
+            }}
             className={`h-8 px-3 rounded border text-xs font-bold ${
               filter === s ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-slate-700 border-slate-200'
             }`}
@@ -768,7 +931,39 @@ export default function Shipments() {
             ) : null}
           </button>
         ))}
-        <Button type="button" variant="outline" className="h-8 ml-auto" onClick={() => void load()}>
+        <div
+          className="relative ml-auto h-8 w-[min(100%,22rem)] rounded-md border border-slate-200 bg-white shadow-sm transition-[box-shadow,border-color] focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/20"
+          role="search"
+        >
+          <Search
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            aria-hidden
+          />
+          <input
+            type="search"
+            value={listSearch}
+            onChange={(e) => setListSearch(e.target.value)}
+            placeholder="Заказчик, юр. лицо, контракт, REF или товар…"
+            className={`h-full w-full rounded-md border-0 bg-transparent py-0 pl-8 text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-0 ${
+              listSearch.trim() ? 'pr-8' : 'pr-2.5'
+            }`}
+          />
+          {listSearch.trim() ? (
+            <button
+              type="button"
+              onClick={() => {
+                setListSearch('');
+                writeListParamsToUrl('', filter);
+              }}
+              className="absolute right-1 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-red-500 hover:bg-red-50 hover:text-red-600"
+              aria-label="Сбросить поиск"
+              title="Сбросить"
+            >
+              <X className="h-3.5 w-3.5" strokeWidth={2.5} />
+            </button>
+          ) : null}
+        </div>
+        <Button type="button" variant="outline" className="h-8 shrink-0" onClick={() => void load()}>
           {loading ? 'Обновление...' : 'Обновить'}
         </Button>
       </div>
@@ -776,13 +971,20 @@ export default function Shipments() {
       <div className="rounded-md border bg-white overflow-hidden">
         <div className="grid grid-cols-12 gap-2 px-3 py-2 bg-slate-50 border-b text-[10px] font-bold uppercase text-slate-500 tracking-wider">
           <div className="col-span-2">Статус</div>
-          <div className="col-span-3">Заказчик</div>
+          <div className="col-span-2">Заказчик</div>
+          <div className="col-span-2">Юр. лицо</div>
           <div className="col-span-2">Контракт</div>
           <div className="col-span-1 text-right">Позиций</div>
-          <div className="col-span-4 text-right">Действия</div>
+          <div className="col-span-3 text-right">Действия</div>
         </div>
         {items.length === 0 ? (
-          <div className="p-4 text-sm text-slate-600">{loading ? 'Загрузка...' : 'Пока нет отгрузок'}</div>
+          <div className="p-4 text-sm text-slate-600">
+            {loading
+              ? 'Загрузка...'
+              : listSearch.trim()
+                ? 'По запросу ничего не найдено'
+                : 'Пока нет отгрузок'}
+          </div>
         ) : (
           <div className="divide-y">
             {items.map((s) => {
@@ -796,18 +998,23 @@ export default function Shipments() {
                       {badge.label}
                     </span>
                   </div>
-                  <div className="col-span-3 min-w-0">
+                  <div className="col-span-2 min-w-0">
                     <div className="font-semibold text-slate-900 truncate" title={s.counterparty?.name ?? ''}>
                       {s.counterparty?.name ?? '—'}
+                    </div>
+                  </div>
+                  <div className="col-span-2 min-w-0">
+                    <div className="font-semibold text-slate-900 truncate" title={s.legalEntity?.name ?? ''}>
+                      {s.legalEntity?.name ?? '—'}
                     </div>
                   </div>
                   <div className="col-span-2 font-mono text-xs text-slate-700 truncate" title={s.contract?.number ?? ''}>
                     {s.contract?.number ?? '—'}
                   </div>
                   <div className="col-span-1 text-right font-mono text-xs text-slate-700">{s.itemsCount}</div>
-                  <div className="col-span-4 flex flex-wrap justify-end gap-2">
-                    <Button type="button" variant="outline" size="sm" onClick={() => navigate(`/shipments/${s.id}/print`)}>
-                      Печать
+                  <div className="col-span-3 flex flex-wrap justify-end gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => openShipmentView(s.id)}>
+                      Просмотр
                     </Button>
                     {s.status === 'NEW' ? (
                       <Button
@@ -818,6 +1025,10 @@ export default function Shipments() {
                       >
                         На сборку
                       </Button>
+                    ) : s.status === 'DRAFT' ? (
+                      <span className="self-center text-[10px] font-semibold text-rose-700 px-1">
+                        Черновик · исправьте REF
+                      </span>
                     ) : (
                       <Button type="button" variant="secondary" size="sm" disabled>
                         На сборку
@@ -881,7 +1092,7 @@ export default function Shipments() {
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={s.status !== 'NEW'}
+                      disabled={!isEditableShipmentStatus(s.status)}
                       onClick={() => editShipment(s)}
                     >
                       Редактировать
@@ -890,7 +1101,7 @@ export default function Shipments() {
                       type="button"
                       variant="destructive"
                       size="sm"
-                      disabled={s.status !== 'NEW'}
+                      disabled={!isEditableShipmentStatus(s.status)}
                       onClick={() => requestDeleteShipment(s)}
                     >
                       Удалить
@@ -1117,6 +1328,25 @@ export default function Shipments() {
                   </select>
 
                   <div className="mt-3">
+                    <div className="text-xs font-bold text-slate-700 mb-2">Выберите юр.лицо от которого отгружаем</div>
+                    <select
+                      value={legalEntityId}
+                      onChange={(e) => setLegalEntityId(e.target.value)}
+                      className="w-full h-9 border border-slate-200 rounded px-2 text-sm bg-white"
+                    >
+                      <option value="">— выбрать юр. лицо —</option>
+                      {legalEntities.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="text-[11px] text-slate-500 mt-1">
+                      Отображается отдельной колонкой в списке отгрузок и участвует в поиске.
+                    </div>
+                  </div>
+
+                  <div className="mt-3">
                     <div className="text-xs font-bold text-slate-700 mb-2">
                       Контракт {mode === 'contract' ? '(выбор из базы)' : '(поиск по номеру)'}
                     </div>
@@ -1238,10 +1468,10 @@ export default function Shipments() {
                         </thead>
                         <tbody>
                           {draftItems.map((it, idx) => (
-                            <tr
-                              key={idx}
-                              className={`border-b border-slate-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/90'} hover:bg-blue-50/40`}
-                            >
+                            <Fragment key={idx}>
+                              <tr
+                                className={`border-b border-slate-200 ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/90'} hover:bg-blue-50/40`}
+                              >
                               <td className="border-r border-slate-200 px-1 py-1 text-center font-mono text-slate-600 align-top">
                                 {idx + 1}
                               </td>
@@ -1258,13 +1488,35 @@ export default function Shipments() {
                               </td>
                               <td className="border-r border-slate-200 px-1 py-1 align-top">
                                 <input
+                                  ref={(el) => {
+                                    if (el) draftRefInputRefs.current.set(idx, el);
+                                    else draftRefInputRefs.current.delete(idx);
+                                  }}
                                   value={it.code ?? ''}
                                   onChange={(e) => {
                                     const v = e.target.value;
-                                    setDraftItems((prev) => prev.map((p, i) => (i === idx ? { ...p, code: v } : p)));
+                                    setDraftRefPopover(null);
+                                    setDraftItems((prev) =>
+                                      prev.map((p, i) =>
+                                        i === idx ? { ...p, code: v, refLinkStatus: undefined } : p,
+                                      ),
+                                    );
                                   }}
-                                  className={`${draftInputClass} font-mono`}
+                                  className={`${draftInputClass} font-mono ${
+                                    isDraftRefRow(it)
+                                      ? 'border-rose-400 bg-rose-50/60 ring-1 ring-rose-200'
+                                      : !(it.code ?? '').trim() && isPlausibleItemName(it.name)
+                                        ? 'border-amber-300 bg-amber-50/40'
+                                        : ''
+                                  }`}
                                   placeholder="REF"
+                                  title={
+                                    isDraftRefRow(it)
+                                      ? 'REF не найден в номенклатуре — отгрузка сохранена как черновик'
+                                      : !(it.code ?? '').trim() && isPlausibleItemName(it.name)
+                                        ? 'Без REF позиция сохранится, но не будет связана с номенклатурой'
+                                        : undefined
+                                  }
                                 />
                               </td>
                               <td className="border-r border-slate-200 px-1 py-1 align-top bg-blue-50/20">
@@ -1369,6 +1621,7 @@ export default function Shipments() {
                                 </button>
                               </td>
                             </tr>
+                            </Fragment>
                           ))}
                         </tbody>
                       </table>
@@ -1378,6 +1631,14 @@ export default function Shipments() {
               </div>
             </div>
           </div>
+          {draftRefPopover ? (
+            <ShipmentDraftRefPopover
+              key={draftRefPopover.triggerKey}
+              anchorEl={draftRefInputRefs.current.get(draftRefPopover.rowIndex) ?? null}
+              refCode={draftRefPopover.refCode}
+              onClose={() => setDraftRefPopover(null)}
+            />
+          ) : null}
         </div>
       )}
     </div>

@@ -57,6 +57,10 @@ export class CreateShipmentDto {
 
   @IsOptional()
   @IsString()
+  legalEntityId?: string;
+
+  @IsOptional()
+  @IsString()
   contractId?: string;
 
   @IsOptional()

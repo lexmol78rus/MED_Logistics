@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   Logger,
@@ -18,15 +19,21 @@ import {
   type ProductLotContext,
 } from '../../common/utils/inventory-status.util';
 import { resolveProductIdFromBarcode } from '../../common/barcode-lookup';
+import { normalizeGtin } from '../../common/gtin-normalize';
 import { resolveExpiryThresholds } from '../../common/utils/expiry-thresholds.util';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InventoryBalanceService } from '../inventory/inventory-balance.service';
 import { ExpectedReceiptsService } from '../expected-receipts/expected-receipts.service';
 import { SettingsService } from '../settings/settings.service';
+import {
+  ShipmentAssemblyReservationService,
+  type ShipmentAssemblyHold,
+} from '../shipments/shipment-assembly-reservation.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { QuickCreateProductDto } from './dto/quick-create-product.dto';
 import { UpdateProductDto } from './dto/update-product.dto';
 import { PurgeAllProductsDto } from './dto/purge-all-products.dto';
+import { ProductNamesService } from '../product-names/product-names.service';
 
 export type ProductLotSummary = {
   lot: string;
@@ -49,10 +56,13 @@ export type ProductListItem = {
   lotItems: ProductLotSummary[];
   nearestExpiry: string;
   barcode: string | null;
+  gtin: string | null;
   location: string | null;
   minStock: number | null;
   reorderPoint: number | null;
   lowStock: boolean;
+  assemblyReservedQty: number;
+  assemblyHolds: ShipmentAssemblyHold[];
 };
 
 export type ProductDetail = ProductListItem & {
@@ -89,6 +99,8 @@ export class ProductsService {
     private readonly balance: InventoryBalanceService,
     private readonly expectedReceipts: ExpectedReceiptsService,
     private readonly settings: SettingsService,
+    private readonly assemblyReservations: ShipmentAssemblyReservationService,
+    private readonly productNames: ProductNamesService,
   ) {}
 
   private async getExpiryThresholds() {
@@ -120,6 +132,7 @@ export class ProductsService {
               { sku: { contains: search, mode: 'insensitive' } },
               { name: { contains: search, mode: 'insensitive' } },
               { manufacturer: { contains: search, mode: 'insensitive' } },
+              ...(normalizeGtin(search) ? [{ gtin: normalizeGtin(search)! }] : []),
               { barcodes: { some: { barcode: { contains: search, mode: 'insensitive' } } } },
               { lots: { some: { lotNumber: { contains: search, mode: 'insensitive' } } } },
             ],
@@ -149,7 +162,12 @@ export class ProductsService {
     });
 
     const thresholds = await this.getExpiryThresholds();
-    let items = await Promise.all(products.map((p) => this.toListItem(p, thresholds)));
+    const holdsByProduct = await this.assemblyReservations.getHoldsByProductIds(
+      products.map((p) => p.id),
+    );
+    let items = await Promise.all(
+      products.map((p) => this.toListItem(p, thresholds, holdsByProduct.get(p.id) ?? [])),
+    );
 
     if (query.lowStock === true) {
       items = items.filter((i) => i.lowStock);
@@ -186,7 +204,8 @@ export class ProductsService {
     });
     if (!product) throw new NotFoundException('Товар не найден');
     const thresholds = await this.getExpiryThresholds();
-    const item = await this.toListItem(product, thresholds);
+    const holds = await this.assemblyReservations.getHoldsByProductIds([id]);
+    const item = await this.toListItem(product, thresholds, holds.get(id) ?? []);
     return { ...item, category: null, storageCond: null };
   }
 
@@ -203,11 +222,18 @@ export class ProductsService {
       if (barcodeTaken) throw new ConflictException('Штрихкод уже используется');
     }
 
+    const gtin = normalizeGtin(dto.gtin);
+    if (gtin) {
+      const gtinTaken = await this.prisma.product.findUnique({ where: { gtin } });
+      if (gtinTaken) throw new ConflictException('GTIN уже используется другим товаром');
+    }
+
     const product = await this.prisma.product.create({
       data: {
         sku,
         name: dto.name.trim(),
         manufacturer: dto.manufacturer?.trim() || null,
+        gtin,
         barcodes: dto.barcode
           ? { create: { barcode: dto.barcode.trim() } }
           : undefined,
@@ -239,6 +265,8 @@ export class ProductsService {
       },
     });
 
+    await this.productNames.recordUsage(product.name, product.manufacturer);
+
     const created = await this.toListItem(product);
     return { ...created, category: null, storageCond: null };
   }
@@ -248,14 +276,33 @@ export class ProductsService {
     const name = dto.name.trim();
 
     // REF — главный идентификатор: один товар, много штрихкодов и партий LOT.
+    const gtin = normalizeGtin(dto.gtin);
+
     const existingByRef = await this.findProductByRefForQuickCreate(dto.sku);
     if (existingByRef) {
       await this.linkBarcodeToProduct(barcode, existingByRef.id, { allowReassign: true });
+      await this.applyGtinIfEmpty(existingByRef.id, gtin);
       this.logger.log(
         `quick-create reuse by ref sku=${existingByRef.sku} barcode=${barcode}`,
       );
-      const item = await this.toListItem(existingByRef);
+      const refreshed = await this.prisma.product.findUnique({
+        where: { id: existingByRef.id },
+        include: this.productQuickCreateInclude(),
+      });
+      const item = await this.toListItem(refreshed ?? existingByRef);
       return { ...item, category: null, storageCond: null, created: false };
+    }
+
+    if (gtin) {
+      const existingByGtin = await this.prisma.product.findUnique({
+        where: { gtin },
+        include: this.productQuickCreateInclude(),
+      });
+      if (existingByGtin) {
+        await this.linkBarcodeToProduct(barcode, existingByGtin.id, { allowReassign: true });
+        const item = await this.toListItem(existingByGtin);
+        return { ...item, category: null, storageCond: null, created: false };
+      }
     }
 
     const productIdFromBarcode = await resolveProductIdFromBarcode(
@@ -268,7 +315,12 @@ export class ProductsService {
         include: this.productQuickCreateInclude(),
       });
       if (product) {
-        const item = await this.toListItem(product);
+        await this.applyGtinIfEmpty(product.id, gtin);
+        const refreshed = await this.prisma.product.findUnique({
+          where: { id: product.id },
+          include: this.productQuickCreateInclude(),
+        });
+        const item = await this.toListItem(refreshed ?? product);
         return { ...item, category: null, storageCond: null, created: false };
       }
     }
@@ -282,11 +334,17 @@ export class ProductsService {
     // - Two users may quick-create same REF/barcode in parallel.
     // - DB unique constraints decide the winner; we then reuse the created product.
     try {
+      if (gtin) {
+        const gtinTaken = await this.prisma.product.findUnique({ where: { gtin } });
+        if (gtinTaken) throw new ConflictException('GTIN уже используется другим товаром');
+      }
+
       const product = await this.prisma.product.create({
         data: {
           sku,
           name,
           manufacturer: dto.manufacturer?.trim() || null,
+          gtin,
           // Avoid nested create race on barcode unique: link separately (upsert).
         },
         include,
@@ -306,6 +364,8 @@ export class ProductsService {
           metadata: { sku: product.sku, name: product.name, barcode },
         },
       });
+
+      await this.productNames.recordUsage(product.name, product.manufacturer);
 
       const created = await this.toListItem(product);
       return { ...created, category: null, storageCond: null, created: true };
@@ -329,7 +389,12 @@ export class ProductsService {
             create: { barcode, productId: existing.id },
             update: { productId: existing.id, lotId: null },
           });
-          const item = await this.toListItem(existing);
+          await this.applyGtinIfEmpty(existing.id, gtin);
+          const refreshed = await this.prisma.product.findUnique({
+            where: { id: existing.id },
+            include,
+          });
+          const item = await this.toListItem(refreshed ?? existing);
           return { ...item, category: null, storageCond: null, created: false };
         }
       }
@@ -506,6 +571,27 @@ export class ProductsService {
     throw new ConflictException('Штрихкод уже используется');
   }
 
+  private async applyGtinIfEmpty(productId: string, gtinInput?: string | null): Promise<void> {
+    const gtin = normalizeGtin(gtinInput);
+    if (!gtin) return;
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+      select: { gtin: true },
+    });
+    if (!product || product.gtin) return;
+
+    const taken = await this.prisma.product.findFirst({
+      where: { gtin, NOT: { id: productId } },
+    });
+    if (taken) return;
+
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { gtin },
+    });
+  }
+
   private async resolveQuickCreateSku(skuInput: string | undefined, barcode: string): Promise<string> {
     if (skuInput?.trim()) {
       const sku = skuInput.trim().toUpperCase();
@@ -546,12 +632,27 @@ export class ProductsService {
       if (barcodeTaken) throw new ConflictException('Штрихкод уже используется');
     }
 
+    let newGtin: string | null | undefined;
+    if (dto.gtin !== undefined) {
+      newGtin = normalizeGtin(dto.gtin);
+      if (dto.gtin.trim() && !newGtin) {
+        throw new BadRequestException('Некорректный GTIN (ожидается 8–14 цифр)');
+      }
+      if (newGtin) {
+        const gtinTaken = await this.prisma.product.findFirst({
+          where: { gtin: newGtin, NOT: { id } },
+        });
+        if (gtinTaken) throw new ConflictException('GTIN уже используется другим товаром');
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       await tx.product.update({
         where: { id },
         data: {
           sku: newSku,
           name: dto.name?.trim(),
+          gtin: newGtin !== undefined ? newGtin : undefined,
           manufacturer:
             dto.manufacturer !== undefined ? dto.manufacturer?.trim() || null : undefined,
           minStock:
@@ -600,6 +701,14 @@ export class ProductsService {
         },
       });
     });
+
+    if (dto.name?.trim()) {
+      const mfr =
+        dto.manufacturer !== undefined
+          ? dto.manufacturer?.trim() || null
+          : existing.manufacturer;
+      await this.productNames.recordUsage(dto.name.trim(), mfr);
+    }
 
     return this.getById(id);
   }
@@ -686,6 +795,7 @@ export class ProductsService {
     product: {
       id: string;
       sku: string;
+      gtin: string | null;
       name: string;
       manufacturer: string | null;
       minStock: Prisma.Decimal | null;
@@ -704,6 +814,7 @@ export class ProductsService {
       inventoryRows: { quantity: Prisma.Decimal }[];
     },
     thresholds = resolveExpiryThresholds(),
+    assemblyHolds: ShipmentAssemblyHold[] = [],
   ): Promise<ProductListItem> {
     const qty = product.inventoryRows.reduce(
       (sum, row) => sum + decimalToNumber(row.quantity),
@@ -751,11 +862,14 @@ export class ProductsService {
       bal.availableQuantity > 0 &&
       bal.availableQuantity <= threshold;
 
+    const assemblyReservedQty = assemblyHolds.reduce((sum, hold) => sum + hold.quantity, 0);
+
     return {
       id: product.id,
       status: computeProductStatus(bal.availableQuantity, nearestExpiry, thresholds),
       name: product.name,
       ref: product.sku,
+      gtin: product.gtin,
       lot: primaryLot,
       manufacturer: product.manufacturer,
       qty,
@@ -768,6 +882,8 @@ export class ProductsService {
       minStock,
       reorderPoint,
       lowStock,
+      assemblyReservedQty,
+      assemblyHolds,
     };
   }
 }

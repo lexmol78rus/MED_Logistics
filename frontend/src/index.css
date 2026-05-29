@@ -895,3 +895,21 @@
 .notification-bell-ring {
   animation: notification-bell-ring-glow 1.6s ease-in-out infinite;
 }
+
+/* Sonner: центр сверху, голубоватый фон — не перекрывает кнопки справа */
+[data-sonner-toaster][data-x-position='center'] {
+  left: 50%;
+  transform: translateX(-50%);
+}
+
+[data-sonner-toaster] {
+  --normal-bg: #e8f4fc;
+  --normal-text: #0f172a;
+  --normal-border: #93c5fd;
+}
+
+[data-sonner-toast][data-styled='true'] {
+  background: #e8f4fc;
+  border-color: #93c5fd;
+  color: #0f172a;
+}

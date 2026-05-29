@@ -28,6 +28,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: med_warehouse_api_prod
+    command: ["node", "dist/main.js"]
     restart: always
     depends_on:
       postgres:

@@ -16,6 +16,7 @@ export type CreateProductPayload = {
   name: string;
   manufacturer?: string;
   barcode?: string;
+  gtin?: string;
 };
 
 export type UpdateProductPayload = {
@@ -23,6 +24,7 @@ export type UpdateProductPayload = {
   name?: string;
   manufacturer?: string;
   barcode?: string;
+  gtin?: string;
 };
 
 export type QuickCreateProductPayload = {
@@ -30,6 +32,7 @@ export type QuickCreateProductPayload = {
   name: string;
   sku?: string;
   manufacturer?: string;
+  gtin?: string;
 };
 
 export type QuickCreateProductResult = ProductDetail & {

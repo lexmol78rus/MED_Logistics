@@ -7,35 +7,59 @@ import {
   uploadProductRuDocument,
   type ProductRuDocument,
 } from '../../lib/api/product-ru';
-import { canEditProduct, type UserRole } from '../../lib/rbac/permissions';
+import { canAttachProductRu, type UserRole } from '../../lib/rbac/permissions';
 
 type Props = {
-  productId: string;
+  productId: string | null;
+  /** Для черновика товара: создать карточку в БД перед загрузкой РУ. */
+  ensureProductId?: () => Promise<string>;
   userRole: UserRole | null;
 };
 
-export default function ReceivingProductRu({ productId, userRole }: Props) {
-  const canEdit = canEditProduct(userRole);
+export default function ReceivingProductRu({
+  productId,
+  ensureProductId,
+  userRole,
+}: Props) {
+  const canAttach = canAttachProductRu(userRole);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [resolvedProductId, setResolvedProductId] = useState<string | null>(productId);
   const [items, setItems] = useState<ProductRuDocument[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
 
-  const load = useCallback(async () => {
+  useEffect(() => {
+    setResolvedProductId(productId);
+  }, [productId]);
+
+  const load = useCallback(async (id: string) => {
     setLoading(true);
     try {
-      const res = await fetchProductRuDocuments(productId);
+      const res = await fetchProductRuDocuments(id);
       setItems(res.items);
     } catch {
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [productId]);
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, [load]);
+    if (!resolvedProductId) {
+      setItems([]);
+      setLoading(false);
+      return;
+    }
+    void load(resolvedProductId);
+  }, [resolvedProductId, load]);
+
+  const resolveProductId = async (): Promise<string | null> => {
+    if (resolvedProductId) return resolvedProductId;
+    if (!ensureProductId) return null;
+    const id = await ensureProductId();
+    setResolvedProductId(id);
+    return id;
+  };
 
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -55,9 +79,14 @@ export default function ReceivingProductRu({ productId, userRole }: Props) {
 
     setUploading(true);
     try {
-      await uploadProductRuDocument(productId, file);
+      const id = await resolveProductId();
+      if (!id) {
+        toast.error('Сначала сохраните карточку товара');
+        return;
+      }
+      await uploadProductRuDocument(id, file);
       toast.success('РУ прикреплено');
-      await load();
+      await load(id);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Не удалось загрузить файл');
     } finally {
@@ -65,15 +94,17 @@ export default function ReceivingProductRu({ productId, userRole }: Props) {
     }
   };
 
+  const isPendingProduct = !resolvedProductId && Boolean(ensureProductId);
+
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5 h-full justify-start">
       <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
         РУ (рег. удостоверение)
       </label>
       <div className="flex flex-wrap items-center gap-2 min-h-10">
-        {loading ? (
+        {resolvedProductId && loading ? (
           <span className="text-[11px] text-slate-400">Загрузка…</span>
-        ) : items.length > 0 ? (
+        ) : resolvedProductId && items.length > 0 ? (
           <span
             className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1 max-w-full"
             title={items.map((d) => d.originalName).join(', ')}
@@ -86,9 +117,11 @@ export default function ReceivingProductRu({ productId, userRole }: Props) {
             </span>
           </span>
         ) : (
-          <span className="text-[11px] text-slate-400">Не прикреплено</span>
+          <span className="text-[11px] text-slate-400">
+            {isPendingProduct ? 'Новый товар — прикрепите PDF' : 'Не прикреплено'}
+          </span>
         )}
-        {canEdit && (
+        {canAttach && (
           <>
             <input
               ref={fileInputRef}
@@ -111,8 +144,9 @@ export default function ReceivingProductRu({ productId, userRole }: Props) {
           </>
         )}
       </div>
-      <p className="text-[10px] text-slate-400">
+      <p className="text-[10px] text-slate-400 leading-tight">
         PDF до 10 МБ · привязано к товару, не к партии
+        {isPendingProduct ? ' · карточка сохранится при прикреплении' : ''}
       </p>
     </div>
   );

@@ -95,6 +95,21 @@ export class InventoryService {
     if (!product) throw new NotFoundException('Товар не найден');
 
     const expiryDate = new Date(dto.expiryDate);
+    const expiryDay = new Date(
+      Date.UTC(expiryDate.getUTCFullYear(), expiryDate.getUTCMonth(), expiryDate.getUTCDate()),
+    );
+    const today = new Date();
+    const todayUtc = new Date(Date.UTC(today.getUTCFullYear(), today.getMonth(), today.getDate()));
+    if (expiryDay.getTime() < todayUtc.getTime()) {
+      const ru =
+        `${String(expiryDate.getUTCDate()).padStart(2, '0')}.` +
+        `${String(expiryDate.getUTCMonth() + 1).padStart(2, '0')}.` +
+        `${expiryDate.getUTCFullYear()}`;
+      throw new BadRequestException(
+        `Приёмка заблокирована: срок годности ${ru} уже истёк. Товар принять на склад нельзя.`,
+      );
+    }
+
     const lotNumber = dto.lotNumber.trim().toUpperCase();
     const quantity = new Prisma.Decimal(dto.quantity);
 

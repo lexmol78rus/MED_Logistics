@@ -10,6 +10,7 @@ export type ReceivingScannedProduct = {
   ref: string;
   manufacturer: string | null;
   barcode: string;
+  gtin?: string | null;
 };
 
 export type ReceivingFormDraft = {

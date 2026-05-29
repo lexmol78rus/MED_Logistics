@@ -41,6 +41,12 @@ import {
 import { enqueueRetry } from '../lib/ops/retry-queue';
 import type { ReceivingCreateProductDraft } from '../components/receiving/ReceivingCreateProductModal';
 import { createDraftProductId, isDraftProductId } from '../lib/receiving/draftProduct';
+import type { ScanParsedFields } from '../types/api';
+import {
+  applyScanParsedFields,
+  expiryBlockMessage,
+  isExpiryIsoInPast,
+} from '../lib/receiving/scanParsed';
 
 /** Создание карточки в номенклатуре — только при «Оприходовать всё» (шаг 3). */
 async function resolveReceivingProductId(item: ReceivingCartItem): Promise<string> {
@@ -50,6 +56,7 @@ async function resolveReceivingProductId(item: ReceivingCartItem): Promise<strin
     name: item.productName,
     sku: item.productRef.trim() || undefined,
     manufacturer: item.manufacturer?.trim() || undefined,
+    gtin: item.productGtin?.trim() || undefined,
   });
   return created.id;
 }
@@ -160,6 +167,9 @@ export default function Receiving() {
   const [pendingReceivingFlow, setPendingReceivingFlow] = useState(false);
   const [activeExpected, setActiveExpected] = useState<ExpectedReceipt[]>([]);
   const [batchConfirmOpen, setBatchConfirmOpen] = useState(false);
+  const [scanExpiryWarning, setScanExpiryWarning] = useState<string | null>(null);
+  const [scanHints, setScanHints] = useState<string[]>([]);
+  const [pendingParsed, setPendingParsed] = useState<ScanParsedFields | null>(null);
 
   useEffect(() => {
     // Keep UI text in sync when draft changes (edit line, clear, restore from storage).
@@ -223,6 +233,50 @@ export default function Receiving() {
     [applyScannedProduct],
   );
 
+  const applyParsedFromScan = useCallback(
+    (parsed: ScanParsedFields | null | undefined) => {
+      if (!parsed) return;
+      applyScanParsedFields(parsed, (fields) => setForm(fields), setExpiryText);
+    },
+    [setForm],
+  );
+
+  const ensureProductForRu = useCallback(async (): Promise<string> => {
+    if (!scannedProduct) {
+      throw new Error('Товар не выбран');
+    }
+    if (!isDraftProductId(scannedProduct.id)) {
+      return scannedProduct.id;
+    }
+
+    const created = await quickCreateProduct({
+      barcode: scannedProduct.barcode,
+      name: scannedProduct.name,
+      sku: scannedProduct.ref.trim() || undefined,
+      manufacturer: scannedProduct.manufacturer?.trim() || undefined,
+      gtin: scannedProduct.gtin?.trim() || undefined,
+    });
+
+    const draftId = scannedProduct.id;
+    applyScannedProduct({
+      id: created.id,
+      name: created.name,
+      ref: created.ref,
+      manufacturer: created.manufacturer,
+      barcode: created.barcode ?? scannedProduct.barcode,
+      gtin: scannedProduct.gtin,
+    });
+
+    const { cart: currentCart } = useReceivingDraftStore.getState();
+    for (const item of currentCart) {
+      if (item.productId === draftId) {
+        upsertCartItem({ ...item, productId: created.id }, item.id);
+      }
+    }
+
+    return created.id;
+  }, [scannedProduct, applyScannedProduct, upsertCartItem]);
+
   const resumeReceivingFlowDraft = useCallback(
     (draft: ReceivingCreateProductDraft) => {
       const draftId = createDraftProductId(draft.barcode);
@@ -232,12 +286,15 @@ export default function Receiving() {
         ref: draft.ref,
         manufacturer: draft.manufacturer,
         barcode: draft.barcode,
+        gtin: draft.gtin,
       });
+      applyParsedFromScan(pendingParsed);
+      setPendingParsed(null);
       setPendingBarcode(null);
       setPendingReceivingFlow(false);
-      toast.success('Продолжите приёмку: укажите партию, срок и количество.');
+      toast.success('Продолжите приёмку: проверьте партию и срок, укажите количество.');
     },
-    [applyScannedProduct],
+    [applyScannedProduct, applyParsedFromScan, pendingParsed],
   );
 
   const openCreateProductModal = useCallback((scannedBarcode: string) => {
@@ -259,9 +316,16 @@ export default function Receiving() {
     if (!code || createModalOpen) return;
 
     setScanning(true);
+    setScanExpiryWarning(null);
+    setScanHints([]);
     try {
       const result = await processScanner(code);
+
+      setScanExpiryWarning(result.expiryWarning ?? null);
+      setScanHints(result.hints ?? []);
+
       if (!result.found || !result.product) {
+        setPendingParsed(result.parsed ?? null);
         if (shouldOpenReceivingCreateModal(userRole)) {
           openCreateProductModal(code);
         } else {
@@ -270,6 +334,7 @@ export default function Receiving() {
         }
         return;
       }
+
       applyScannedProduct({
         id: result.product.id,
         name: result.product.name,
@@ -277,6 +342,8 @@ export default function Receiving() {
         manufacturer: result.product.manufacturer,
         barcode: result.product.barcode,
       });
+      applyParsedFromScan(result.parsed);
+      setPendingParsed(null);
       setPendingReceivingFlow(false);
       try {
         const expected = await fetchActiveExpectedReceipts(result.product.id);
@@ -309,6 +376,7 @@ export default function Receiving() {
   const handleCreateModalClose = () => {
     setCreateModalOpen(false);
     setPendingBarcode(null);
+    setPendingParsed(null);
     setPendingReceivingFlow(false);
     const { cart, form } = useReceivingDraftStore.getState();
     if (
@@ -331,7 +399,13 @@ export default function Receiving() {
 
   const expiryIso = ruToIsoDate(expiryText) ?? expiry;
 
+  const receivingBlockMessage =
+    expiryIso && isExpiryIsoInPast(expiryIso) ? expiryBlockMessage(expiryIso) : null;
+
   const validateLine = useCallback((): string | null => {
+    if (receivingBlockMessage) {
+      return receivingBlockMessage;
+    }
     if (!scannedProduct || !lot.trim() || !expiryIso || !qty) {
       if (scannedProduct && lot.trim() && qty && expiryText.trim().length === 10 && !ruToIsoDate(expiryText)) {
         return 'Некорректная дата срока годности — проверьте день/месяц (ДД.ММ.ГГГГ)';
@@ -342,14 +416,11 @@ export default function Receiving() {
     if (!Number.isFinite(quantity) || quantity <= 0) {
       return 'Укажите корректное количество';
     }
-    const expiryDate = new Date(expiryIso);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    if (expiryDate < today) {
-      return 'Срок годности не может быть в прошлом';
+    if (expiryIso && isExpiryIsoInPast(expiryIso)) {
+      return expiryBlockMessage(expiryIso);
     }
     return null;
-  }, [scannedProduct, lot, expiryIso, qty, expiryText]);
+  }, [scannedProduct, lot, expiryIso, qty, expiryText, receivingBlockMessage]);
 
   const buildCartItemFromForm = useCallback((): ReceivingCartItem | null => {
     const error = validateLine();
@@ -366,6 +437,7 @@ export default function Receiving() {
       productRef: scannedProduct.ref,
       barcode: scannedProduct.barcode,
       manufacturer: scannedProduct.manufacturer,
+      productGtin: scannedProduct.gtin ?? null,
       lotNumber: lot.trim().toUpperCase(),
       expiryDate: expiryIso,
       quantity: Number(qty),
@@ -436,6 +508,7 @@ export default function Receiving() {
           ref: item.productRef,
           manufacturer: item.manufacturer,
           barcode: item.barcode,
+          gtin: item.productGtin ?? null,
         },
         { keepLotFields: true },
       );
@@ -529,7 +602,12 @@ export default function Receiving() {
 
   // Enable button when user filled fields; actual date validity is enforced in validateLine().
   const canAddToCart = Boolean(
-    scannedProduct && lot.trim() && (expiryText.trim() || expiryIso) && qty && !submitting,
+    scannedProduct &&
+      lot.trim() &&
+      (expiryText.trim() || expiryIso) &&
+      qty &&
+      !submitting &&
+      !receivingBlockMessage,
   );
   const batchTotalUnits = cart.reduce((sum, item) => sum + item.quantity, 0);
   const showSplitLayout = Boolean(scannedProduct || cart.length > 0);
@@ -540,6 +618,9 @@ export default function Receiving() {
       <ReceivingCreateProductModal
         open={createModalOpen && !!pendingBarcode}
         barcode={pendingBarcode ?? ''}
+        initialGtin={pendingParsed?.gtin ?? null}
+        expiryWarning={scanExpiryWarning}
+        scanHints={scanHints}
         onClose={handleCreateModalClose}
         onSubmitDraft={handleProductDraftSubmitted}
       />
@@ -607,6 +688,34 @@ export default function Receiving() {
                   {scanning ? 'Поиск...' : 'Запросить ВУ'}
                 </Button>
               </div>
+
+              {scanExpiryWarning && !receivingBlockMessage && !createModalOpen && (
+                <div
+                  role="status"
+                  className="mt-4 flex gap-3 rounded-md border-2 border-amber-400 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-950"
+                >
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
+                  <span>{scanExpiryWarning}</span>
+                </div>
+              )}
+
+              {receivingBlockMessage && (
+                <div
+                  role="alert"
+                  className="mt-4 flex gap-3 rounded-md border-2 border-red-400 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900"
+                >
+                  <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                  <span>{receivingBlockMessage}</span>
+                </div>
+              )}
+
+              {!receivingBlockMessage && scanHints.length > 0 && !createModalOpen && (
+                <div className="mt-4 rounded-md border border-blue-200 bg-blue-50/80 px-4 py-3 text-xs font-medium text-slate-700 space-y-1">
+                  {scanHints.filter((h) => h !== scanExpiryWarning).map((hint) => (
+                    <p key={hint}>{hint}</p>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
@@ -635,6 +744,16 @@ export default function Receiving() {
               </div>
 
               <div className="p-6 space-y-6">
+                {receivingBlockMessage && (
+                  <div
+                    role="alert"
+                    className="flex gap-3 rounded-md border-2 border-red-400 bg-red-50 px-4 py-3 text-sm font-semibold text-red-900"
+                  >
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
+                    <span>{receivingBlockMessage}</span>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-5">
                   <div className="md:col-span-2 flex flex-col gap-1.5">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -664,6 +783,9 @@ export default function Receiving() {
                         setExpiryText(normalized);
                         const iso = ruToIsoDate(normalized);
                         setForm({ expiry: iso ?? '' });
+                        if (scanExpiryWarning && iso && !isExpiryIsoInPast(iso)) {
+                          setScanExpiryWarning(null);
+                        }
                       }}
                       onBlur={() => {
                         const iso = ruToIsoDate(expiryText);
@@ -724,10 +846,16 @@ export default function Receiving() {
                       Необязательно — можно указать сейчас или позже в карточке товара
                     </p>
                   </div>
-                  <div className="md:col-span-2">
-                    {!isDraftProductId(scannedProduct.id) && (
-                      <ReceivingProductRu productId={scannedProduct.id} userRole={userRole} />
-                    )}
+                  <div className="md:col-span-2 flex flex-col justify-end">
+                    <ReceivingProductRu
+                      productId={
+                        isDraftProductId(scannedProduct.id) ? null : scannedProduct.id
+                      }
+                      ensureProductId={
+                        isDraftProductId(scannedProduct.id) ? ensureProductForRu : undefined
+                      }
+                      userRole={userRole}
+                    />
                   </div>
                 </div>
 

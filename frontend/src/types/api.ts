@@ -13,6 +13,14 @@ export type ProductLotSummary = {
   location?: string | null;
 };
 
+export type ProductAssemblyHold = {
+  quantity: number;
+  reservedBy: string;
+  shipmentId: string;
+  shipmentStatus: string;
+  customerName: string | null;
+};
+
 export type ProductListItem = {
   id: string;
   status: string;
@@ -21,11 +29,15 @@ export type ProductListItem = {
   lot: string | null;
   manufacturer: string | null;
   qty: number;
+  availableQty?: number;
   lots: number;
   lotItems?: ProductLotSummary[];
   nearestExpiry: string;
   barcode: string | null;
+  gtin?: string | null;
   location?: string | null;
+  assemblyReservedQty?: number;
+  assemblyHolds?: ProductAssemblyHold[];
 };
 
 export type ProductDetail = ProductListItem & {
@@ -78,8 +90,22 @@ export type MovementListItem = {
   shipmentLabel?: string | null;
 };
 
+export type BarcodeKind = 'gs1' | 'ean' | 'plain' | 'unknown';
+
+export type ScanParsedFields = {
+  gtin?: string;
+  lot?: string;
+  expiryDate?: string;
+  serial?: string;
+};
+
 export type ScannerProcessResult = {
   found: boolean;
+  barcodeKind: BarcodeKind;
+  parsed: ScanParsedFields;
+  barcodeExpiryDate?: string;
+  expiryWarning?: string;
+  hints: string[];
   entityType?: 'product' | 'lot';
   product?: {
     id: string;

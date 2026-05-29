@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { ShoppingCart } from 'lucide-react';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, ShoppingCart } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
@@ -28,6 +28,10 @@ import { resolveWarehouseMessageMeta } from '../lib/shipments/warehouse-message'
 import { refLinkSummaryHint } from '../lib/shipments/shipment-ref-link';
 import { canWriteoff } from '../lib/rbac/permissions';
 import { useUserStore } from '../stores/userStore';
+import {
+  listSearchToRouterSearch,
+  type ShipmentsListNavState,
+} from '../lib/shipments/list-navigation';
 
 const thBase =
   'border border-slate-300 px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 bg-slate-100';
@@ -268,7 +272,20 @@ function ShipmentPickingPrintDocument({
 export default function ShipmentPrint() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const userRole = useUserStore((s) => s.user?.role ?? null);
+
+  const goBackToShipmentsList = () => {
+    const listSearch = (location.state as ShipmentsListNavState | null)?.listSearch ?? '';
+    if (listSearch) {
+      navigate({
+        pathname: '/shipments',
+        search: listSearchToRouterSearch(listSearch),
+      });
+      return;
+    }
+    navigate(-1);
+  };
   const [data, setData] = useState<ShipmentPrintData | null>(null);
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
@@ -404,7 +421,7 @@ export default function ShipmentPrint() {
   if (!data) return <div className="p-4">Нет данных</div>;
 
   const badge = shipmentStatusBadge(data.status);
-  const canEdit = data.status === 'NEW';
+  const canEdit = data.status === 'NEW' || data.status === 'DRAFT';
   const canSendToWarehouse = data.status === 'NEW';
   const isActivePicking = data.status === 'PICKING';
   const isPaused = data.status === 'PICKING_ON_HOLD';
@@ -466,25 +483,29 @@ export default function ShipmentPrint() {
 
       <div className="shipment-print-screen-only">
       <div className="shipment-print-no-print mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight">Лист сборки</h1>
-            <span className={`inline-flex px-2 py-0.5 rounded border text-[11px] font-bold ${badge.className}`}>
-              {badge.label}
-            </span>
+        <div className="flex items-center gap-3 min-w-0">
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            onClick={goBackToShipmentsList}
+            className="h-8 w-8 shrink-0 bg-slate-50 border-slate-300 text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            title="К списку отгрузок"
+            aria-label="К списку отгрузок"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-bold tracking-tight">Лист сборки</h1>
+              <span className={`inline-flex px-2 py-0.5 rounded border text-[11px] font-bold ${badge.className}`}>
+                {badge.label}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5">Отгрузка #{data.id}</p>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">Отгрузка #{data.id}</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {canEdit ? (
-            <Button type="button" variant="outline" onClick={() => navigate('/shipments')}>
-              К списку · редактировать
-            </Button>
-          ) : (
-            <Button type="button" variant="outline" onClick={() => navigate('/shipments')}>
-              К списку отгрузок
-            </Button>
-          )}
           {canSendToWarehouse ? (
             <Button
               type="button"
@@ -546,7 +567,7 @@ export default function ShipmentPrint() {
           ) : null}
           <Button
             type="button"
-            variant={canSendToWarehouse ? 'outline' : 'default'}
+            className="bg-blue-700 hover:bg-blue-800 text-white"
             title="Альбомная A4, масштаб 100%. Если сверху/снизу видны URL и дата — в «Дополнительно» снимите «Колонтитулы»"
             onClick={handlePrint}
           >

@@ -19,8 +19,8 @@ import {
   productsPairedMetricColumnDef,
 } from '../lib/agGrid/gridPreset';
 import { Button } from '@/components/ui/button';
-import { Search, Download, Plus, Filter, Database } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Search, Download, Plus, Filter, Database, BookText } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import ProductFormDialog from '../components/products/ProductFormDialog';
 import FilterDrawer from '../components/filters/FilterDrawer';
@@ -31,8 +31,11 @@ import { ApiError } from '../lib/api/client';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { canCreateProduct, canEditProduct, canExport } from '../lib/rbac/permissions';
 import { getExpiryThresholds, isExpiryCritical } from '../lib/expiry/thresholds';
+import { formatExpiryRu } from '../lib/writeoff/expiry';
 import { useUserStore } from '../stores/userStore';
+import { ProductAssemblyHoldBadge, formatAssemblyHoldsTip } from '../components/products/ProductAssemblyHoldBadge';
 import { ProductStatusBadge } from '../components/products/ProductStatusBadge';
+import { HoverHint } from '@/components/ui/HoverHint';
 import { MovementGroupExpandIcon } from '../components/movements/MovementGroupExpandIcon';
 import { ProductGroupMasterCell } from '../components/products/ProductGroupMasterCell';
 import { ProductLotGroupDetailRenderer } from '../components/products/ProductLotGroupDetailRenderer';
@@ -223,9 +226,20 @@ export default function Products() {
         valueGetter: (p) => p.data?.product.status,
         cellClass: 'ag-cell-status-indicator',
         tooltipValueGetter: () => null,
-        cellRenderer: (params: ICellRendererParams<ProductGridRow>) => (
-          <ProductStatusBadge status={String(params.data?.product.status ?? '')} />
-        ),
+        cellRenderer: (params: ICellRendererParams<ProductGridRow>) => {
+          const product = params.data?.product;
+          if (!product) return null;
+          const holds = product.assemblyHolds ?? [];
+          return (
+            <div className="flex items-center justify-center gap-1">
+              <ProductStatusBadge status={String(product.status ?? '')} />
+              <ProductAssemblyHoldBadge
+                holds={holds}
+                reservedQty={product.assemblyReservedQty}
+              />
+            </div>
+          );
+        },
       }),
     ),
     ...(SHOW_WAREHOUSE_LOCATIONS
@@ -294,6 +308,34 @@ export default function Products() {
         'movement-group-qty-summary': (p) => isProductGroupMasterRow(p.data),
       },
     }),
+    flexTextColumnDef({
+      field: 'product.assemblyReservedQty',
+      headerName: 'БРОНЬ НА СБОРКУ',
+      minWidth: 148,
+      maxWidth: 190,
+      flex: 0.85,
+      valueGetter: (p) => p.data?.product.assemblyReservedQty ?? 0,
+      cellClass: 'text-xs',
+      cellRenderer: (params: ICellRendererParams<ProductGridRow>) => {
+        if (isProductGroupMasterRow(params.data)) return '—';
+        const product = params.data?.product;
+        if (!product) return '—';
+        const holds = product.assemblyHolds ?? [];
+        const qty = product.assemblyReservedQty ?? 0;
+        if (qty <= 0 || !holds.length) {
+          return <span className="text-slate-300">—</span>;
+        }
+        const managerLabel = holds[0]?.reservedBy?.split('@')[0] ?? '—';
+        return (
+          <HoverHint tip={formatAssemblyHoldsTip(holds)}>
+            <span className="inline-flex items-center gap-1.5 font-mono font-semibold text-sky-800">
+              <span className="inline-block h-2 w-2 rounded-full bg-sky-500" />
+              {qty} · {managerLabel}
+            </span>
+          </HoverHint>
+        );
+      },
+    }),
     productsPairedMetricColumnDef({
       field: 'product.nearestExpiry',
       headerName: 'БЛИЖАЙШИЙ СРОК',
@@ -306,7 +348,7 @@ export default function Products() {
         if (isProductGroupMasterRow(p.data)) return '—';
         const v = p.value as string | null | undefined;
         if (!v || v === 'Н/Д') return '—';
-        return v;
+        return formatExpiryRu(v);
       },
       cellClassRules: {
         'ag-cell-nearest-expiry-critical': (params) => {
@@ -375,6 +417,13 @@ export default function Products() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <Link
+            to="/product-names"
+            className="inline-flex h-8 items-center rounded-lg px-2.5 text-xs font-semibold bg-blue-700 text-white hover:bg-blue-800"
+          >
+            <BookText className="w-3.5 h-3.5 mr-1.5" />
+            База наименований
+          </Link>
           {canExport(userRole) && (
             <Button
               variant="outline"

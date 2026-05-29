@@ -30,6 +30,7 @@ import { ExpectedReceiptsModule } from './modules/expected-receipts/expected-rec
 import { ProductRuModule } from './modules/product-ru/product-ru.module';
 import { CounterpartiesModule } from './modules/counterparties/counterparties.module';
 import { ShipmentsModule } from './modules/shipments/shipments.module';
+import { ProductNamesModule } from './modules/product-names/product-names.module';
 
 @Module({
   imports: [
@@ -89,6 +90,7 @@ import { ShipmentsModule } from './modules/shipments/shipments.module';
     ProductRuModule,
     CounterpartiesModule,
     ShipmentsModule,
+    ProductNamesModule,
   ],
   providers: [
     {

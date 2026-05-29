@@ -20,4 +20,9 @@ export class CreateProductDto {
   @IsString()
   @MaxLength(128)
   barcode?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(14)
+  gtin?: string;
 }

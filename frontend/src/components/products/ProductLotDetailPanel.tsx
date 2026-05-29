@@ -4,6 +4,7 @@ import { Layers } from 'lucide-react';
 import type { ProductListItem, ProductLotSummary } from '../../types/api';
 import { fetchLots } from '../../lib/api/lots';
 import { formatProductLotsSummary, productLotItems } from '../../lib/products/groupProducts';
+import { formatExpiryRu } from '../../lib/writeoff/expiry';
 import { ProductLotStatusBadge } from './ProductLotStatusBadge';
 
 type Props = {
@@ -87,7 +88,7 @@ export function ProductLotDetailPanel({ product }: Props) {
                     </span>
                     <span>
                       <span className="font-semibold text-slate-500">Годен до</span>{' '}
-                      {lot.expiryDate ?? '—'}
+                      {lot.expiryDate ? formatExpiryRu(lot.expiryDate) : '—'}
                     </span>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">

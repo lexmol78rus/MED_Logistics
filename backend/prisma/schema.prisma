@@ -50,6 +50,7 @@ enum ExpectedReceiptEventType {
 enum CounterpartyType {
   CUSTOMER
   SUPPLIER
+  LEGAL_ENTITY
 }
 
 enum ContractDocType {
@@ -66,6 +67,7 @@ enum ShipmentPickingOutcome {
 }
 
 enum ShipmentStatus {
+  DRAFT
   NEW
   PICKING
   PICKING_ON_HOLD
@@ -120,9 +122,26 @@ model RefreshToken {
   @@map("refresh_tokens")
 }
 
+/// Справочник уникальных наименований товаров (отдельно от номенклатуры / физических позиций).
+model ProductNameCatalog {
+  id             String   @id @default(cuid())
+  name           String
+  nameNormalized String   @unique @map("name_normalized")
+  manufacturer   String?
+  useCount       Int      @default(1) @map("use_count")
+  lastUsedAt     DateTime @default(now()) @map("last_used_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@index([name])
+  @@index([lastUsedAt])
+  @@map("product_name_catalog")
+}
+
 model Product {
   id            String   @id @default(cuid())
   sku           String   @unique
+  gtin          String?  @unique @db.VarChar(14)
   name          String
   manufacturer  String?
   minStock      Decimal? @map("min_stock") @db.Decimal(18, 4)
@@ -137,6 +156,7 @@ model Product {
   expectedReceipts           ExpectedReceipt[]
   registrationCertificates   ProductRegistrationCertificate[]
   shipmentItems              ShipmentItem[]
+  assemblyReservations       ShipmentAssemblyReservation[]
 
   @@map("products")
 }
@@ -357,7 +377,8 @@ model Counterparty {
   updatedAt DateTime         @updatedAt @map("updated_at")
 
   contracts Contract[]
-  shipments Shipment[]
+  customerShipments     Shipment[] @relation("ShipmentCustomer")
+  legalEntityShipments  Shipment[] @relation("ShipmentLegalEntity")
 
   @@index([type, isActive])
   @@index([name])
@@ -395,6 +416,7 @@ model Shipment {
   id             String         @id @default(cuid())
   status         ShipmentStatus @default(NEW)
   counterpartyId String?        @map("counterparty_id")
+  legalEntityId  String?        @map("legal_entity_id")
   contractId     String?        @map("contract_id")
   note           String?
   createdBy      String?        @map("created_by")
@@ -409,13 +431,16 @@ model Shipment {
   createdAt                DateTime                @default(now()) @map("created_at")
   updatedAt                DateTime                @updatedAt @map("updated_at")
 
-  counterparty Counterparty? @relation(fields: [counterpartyId], references: [id], onDelete: SetNull)
+  counterparty Counterparty? @relation("ShipmentCustomer", fields: [counterpartyId], references: [id], onDelete: SetNull)
+  legalEntity  Counterparty? @relation("ShipmentLegalEntity", fields: [legalEntityId], references: [id], onDelete: SetNull)
   contract     Contract?     @relation(fields: [contractId], references: [id], onDelete: SetNull)
-  items        ShipmentItem[]
-  movements    StockMovement[]
+  items                 ShipmentItem[]
+  movements             StockMovement[]
+  assemblyReservations  ShipmentAssemblyReservation[]
 
   @@index([status, createdAt])
   @@index([counterpartyId])
+  @@index([legalEntityId])
   @@index([contractId])
   @@map("shipments")
 }
@@ -441,4 +466,23 @@ model ShipmentItem {
   @@index([shipmentId])
   @@index([productId])
   @@map("shipment_items")
+}
+
+/// Бронь номенклатуры под сборку отгрузки (до списания со склада).
+model ShipmentAssemblyReservation {
+  id               String   @id @default(cuid())
+  shipmentId       String   @map("shipment_id")
+  productId        String   @map("product_id")
+  quantity         Decimal  @db.Decimal(18, 4)
+  reservedByEmail  String   @map("reserved_by_email")
+  reservedByUserId String?  @map("reserved_by_user_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  shipment Shipment @relation(fields: [shipmentId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([shipmentId, productId])
+  @@index([productId])
+  @@map("shipment_assembly_reservations")
 }

@@ -105,16 +105,17 @@ export class CounterpartiesService {
       where: { id },
       include: {
         contracts: { select: { id: true, storagePath: true } },
-        _count: { select: { shipments: true } },
+        _count: { select: { customerShipments: true, legalEntityShipments: true } },
       },
     });
     if (!row) throw new NotFoundException('Контрагент не найден');
 
     const activeShipments = await this.prisma.shipment.count({
       where: {
-        counterpartyId: id,
+        OR: [{ counterpartyId: id }, { legalEntityId: id }],
         status: {
           in: [
+            ShipmentStatus.DRAFT,
             ShipmentStatus.NEW,
             ShipmentStatus.PICKING,
             ShipmentStatus.PICKING_ON_HOLD,
@@ -143,7 +144,7 @@ export class CounterpartiesService {
     return {
       ok: true as const,
       removedContracts: row.contracts.length,
-      detachedShipments: row._count.shipments,
+      detachedShipments: row._count.customerShipments + row._count.legalEntityShipments,
     };
   }
 

@@ -29,13 +29,13 @@ export class ShipmentsController {
   @Roles(...ADMIN_MANAGER)
   @Post()
   create(@Body() dto: CreateShipmentDto, @CurrentUser() user: JwtUser) {
-    return this.svc.create(dto, user.email);
+    return this.svc.create(dto, user.email, user.userId);
   }
 
   @Roles(...ADMIN_MANAGER)
   @Patch(':id')
   update(@Param('id') id: string, @Body() dto: CreateShipmentDto, @CurrentUser() user: JwtUser) {
-    return this.svc.update(id, dto, user.email);
+    return this.svc.update(id, dto, user.email, user.userId);
   }
 
   @Roles(...ADMIN_MANAGER)

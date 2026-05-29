@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { ADMIN_MANAGER, READ_ROLES } from '../../common/constants/roles';
+import { ADMIN_MANAGER, ADMIN_MANAGER_OPERATOR, READ_ROLES } from '../../common/constants/roles';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { Roles } from '../../common/decorators/roles.decorator';
 import type { JwtUser } from '../../common/interfaces/jwt-user.interface';
@@ -26,7 +26,7 @@ export class ProductRuController {
     return this.productRu.list(productId);
   }
 
-  @Roles(...ADMIN_MANAGER)
+  @Roles(...ADMIN_MANAGER_OPERATOR)
   @Post()
   @UseInterceptors(
     FileInterceptor('file', {

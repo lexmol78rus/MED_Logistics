@@ -32,6 +32,7 @@ import { useUserStore } from '../stores/userStore';
 import { loadSettings } from '../lib/settings/storage';
 import { SHOW_WAREHOUSE_LOCATIONS } from '../lib/pilotFeatures';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
+import { formatAssemblyHoldsTip } from '../components/products/ProductAssemblyHoldBadge';
 
 type LotRow = {
   lotArea?: string;
@@ -122,6 +123,10 @@ export default function ProductDetails() {
   const blockedCount = lotsRaw.filter((l) => l.status === 'БЛОК').length;
   const quarantineCount = lotsRaw.filter((l) => l.status === 'КАРАНТИН').length;
   const fefoLot = lotsRaw[0];
+  const assemblyHolds = product?.assemblyHolds ?? [];
+  const assemblyReservedQty =
+    product?.assemblyReservedQty ??
+    assemblyHolds.reduce((sum, hold) => sum + hold.quantity, 0);
 
   const lotsColDef = useMemo<ColDef<LotRow>[]>(
     () => [
@@ -227,6 +232,11 @@ export default function ProductDetails() {
               <span className="flex items-center gap-1">
                 <QrCode className="w-3 h-3" /> {product.barcode ?? '—'}
               </span>
+              {product.gtin && (
+                <span className="flex items-center gap-1 font-mono normal-case">
+                  GTIN {product.gtin}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -308,6 +318,28 @@ export default function ProductDetails() {
               <div className="text-[10px] text-slate-500 mt-1">Статус: {product.status}</div>
             </div>
           </div>
+          {assemblyReservedQty > 0 && assemblyHolds.length > 0 && (
+            <div className="rounded border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-950 shadow-sm">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-sky-800">
+                Бронь на сборку отгрузки
+              </div>
+              <div className="mt-1 font-mono text-lg font-bold text-sky-900">
+                {assemblyReservedQty.toLocaleString('ru-RU')} шт.
+              </div>
+              <ul className="mt-2 space-y-1 text-xs text-sky-900/90">
+                {assemblyHolds.map((hold) => (
+                  <li key={`${hold.shipmentId}-${hold.reservedBy}`}>
+                    {hold.quantity.toLocaleString('ru-RU')} шт. — {hold.reservedBy}
+                    {hold.customerName ? ` · ${hold.customerName}` : ''}
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[10px] text-sky-700/80" title={formatAssemblyHoldsTip(assemblyHolds)}>
+                Свободный остаток в номенклатуре уже уменьшен на эту бронь. Чтобы передать позицию коллеге —
+                отредактируйте количество в его отгрузке.
+              </p>
+            </div>
+          )}
         </>
       )}
 

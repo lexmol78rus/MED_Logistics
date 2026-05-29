@@ -5,6 +5,7 @@ export type ReceivingCartItem = {
   productRef: string;
   barcode: string;
   manufacturer: string | null;
+  productGtin?: string | null;
   lotNumber: string;
   expiryDate: string;
   quantity: number;

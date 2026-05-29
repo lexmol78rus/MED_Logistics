@@ -18,6 +18,7 @@ export const ROLE_BADGE_CLASS: Record<UserRole, string> = {
 export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/dashboard': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/products': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
+  '/product-names': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/lots': ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'],
   '/receiving': ['ADMIN', 'MANAGER', 'OPERATOR'],
   '/write-off': ['ADMIN', 'MANAGER', 'OPERATOR'],
@@ -27,6 +28,7 @@ export const ROUTE_ACCESS: Record<string, UserRole[]> = {
   '/shipments': ['ADMIN', 'MANAGER', 'OPERATOR'],
   '/counterparties/customers': ['ADMIN', 'MANAGER'],
   '/counterparties/suppliers': ['ADMIN', 'MANAGER'],
+  '/counterparties/legal-entities': ['ADMIN', 'MANAGER'],
   '/settings': ['ADMIN', 'MANAGER'],
   '/settings/writeoff-destinations': ['ADMIN', 'MANAGER'],
   '/users': ['ADMIN'],
@@ -79,6 +81,11 @@ export function canReceive(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
 }
 
+/** Прикрепление РУ на экране приёмки (кладовщик и руководство). */
+export function canAttachProductRu(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
+}
+
 export function canWriteoff(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER' || role === 'OPERATOR';
 }
@@ -111,6 +118,11 @@ export function canAdminShiftReport(role: UserRole | null): boolean {
 
 /** Справочник назначений списания. */
 export function canManageWriteoffDestinations(role: UserRole | null): boolean {
+  return role === 'ADMIN' || role === 'MANAGER';
+}
+
+/** База наименований товаров (редактирование / удаление). */
+export function canManageProductNames(role: UserRole | null): boolean {
   return role === 'ADMIN' || role === 'MANAGER';
 }
 

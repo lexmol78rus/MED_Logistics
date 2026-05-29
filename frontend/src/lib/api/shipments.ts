@@ -1,6 +1,22 @@
 import { apiFetch } from './client';
 
-export type ShipmentStatus = 'NEW' | 'PICKING' | 'PICKING_ON_HOLD' | 'PICKED' | 'DISPATCHED';
+export type ShipmentStatus =
+  | 'DRAFT'
+  | 'NEW'
+  | 'PICKING'
+  | 'PICKING_ON_HOLD'
+  | 'PICKED'
+  | 'DISPATCHED';
+
+export type ShipmentRefValidation = {
+  notFoundRefs: string[];
+  isDraft: boolean;
+};
+
+export type ShipmentAssemblyReservationSummary = {
+  lines: number;
+  quantity: number;
+};
 
 export type ShipmentPickingOutcome = 'SUCCESS' | 'PARTIAL' | 'ISSUE';
 
@@ -17,6 +33,7 @@ export type ShipmentListItem = {
   id: string;
   status: ShipmentStatus;
   counterparty: { id: string; name: string; type: 'CUSTOMER' | 'SUPPLIER' } | null;
+  legalEntity: { id: string; name: string; type: 'LEGAL_ENTITY' } | null;
   contract: { id: string; number: string } | null;
   note: string | null;
   createdBy: string | null;
@@ -30,6 +47,10 @@ export type ShipmentListItem = {
   writeoffCompletedAt: string | null;
   createdAt: string;
   itemsCount: number;
+  /** Наименования позиций — для умного поиска в списке. */
+  itemNames?: string[];
+  /** REF (код) позиций — для умного поиска в списке. */
+  itemRefs?: string[];
 };
 
 export type ShipmentItem = {
@@ -55,6 +76,7 @@ export type ShipmentDetail = {
   id: string;
   status: ShipmentStatus;
   counterpartyId: string | null;
+  legalEntityId: string | null;
   contractId: string | null;
   note: string | null;
   createdBy: string | null;
@@ -71,6 +93,9 @@ export type ShipmentDetail = {
   counterparty:
     | { id: string; name: string; inn: string | null; kpp: string | null; type: 'CUSTOMER' | 'SUPPLIER' }
     | null;
+  legalEntity:
+    | { id: string; name: string; inn: string | null; kpp: string | null; type: 'LEGAL_ENTITY' }
+    | null;
   contract: { id: string; number: string; date: string | null; title: string | null } | null;
   items: ShipmentItem[];
   refLinkSummary: ShipmentRefLinkSummary;
@@ -78,6 +103,7 @@ export type ShipmentDetail = {
 
 export type CreateShipmentPayload = {
   counterpartyId?: string;
+  legalEntityId?: string;
   contractId?: string;
   note?: string;
   items: Array<{
@@ -104,11 +130,23 @@ export function fetchShipment(id: string) {
 }
 
 export function createShipment(payload: CreateShipmentPayload) {
-  return apiFetch<{ id: string }>(`/shipments`, { method: 'POST', body: JSON.stringify(payload) });
+  return apiFetch<{
+    id: string;
+    status: ShipmentStatus;
+    reservation: ShipmentAssemblyReservationSummary;
+    refValidation: ShipmentRefValidation;
+  }>(`/shipments`, { method: 'POST', body: JSON.stringify(payload) });
 }
 
 export function updateShipment(id: string, payload: CreateShipmentPayload) {
-  return apiFetch<{ ok: true; id: string; status: ShipmentStatus; updatedAt: string }>(`/shipments/${id}`, {
+  return apiFetch<{
+    ok: true;
+    id: string;
+    status: ShipmentStatus;
+    updatedAt: string;
+    reservation: ShipmentAssemblyReservationSummary;
+    refValidation: ShipmentRefValidation;
+  }>(`/shipments/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(payload),
   });
@@ -169,6 +207,8 @@ export function deleteShipment(id: string) {
 
 export function shipmentStatusBadge(status: ShipmentStatus): { label: string; className: string } {
   switch (status) {
+    case 'DRAFT':
+      return { label: 'Черновик', className: 'bg-rose-100 text-rose-900 border-rose-200' };
     case 'NEW':
       return { label: 'Новый', className: 'bg-slate-100 text-slate-700 border-slate-200' };
     case 'PICKING':
@@ -196,6 +236,7 @@ export type ShipmentPrintData = {
   pickingCompleteComment: string | null;
   writeoffCompletedAt: string | null;
   counterparty: { name: string; inn: string | null; kpp: string | null } | null;
+  legalEntity: { name: string; inn: string | null; kpp: string | null } | null;
   contract: { number: string; date: string | null; title: string | null } | null;
   items: Array<{
     lineNo: number;

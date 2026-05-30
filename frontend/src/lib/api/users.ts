@@ -1,16 +1,19 @@
 import { apiFetch } from './client';
 import { clampPageSize } from '../pagination';
-import type { UserRole } from '../rbac/permissions';
+import type { RoleTemplatesMap } from '../../stores/roleTemplatesStore';
+import type { PermissionOverrides, UserRole } from '../rbac/permissions';
 import { ROLE_LABELS } from '../rbac/permissions';
 
 export type UserProfile = {
   userId: string;
   email: string;
   role: UserRole;
+  permissions: PermissionOverrides | null;
 };
 
 export type MeResponse = {
   user: UserProfile;
+  roleTemplates?: RoleTemplatesMap;
 };
 
 export type UserListItem = {
@@ -18,6 +21,7 @@ export type UserListItem = {
   email: string;
   displayName: string | null;
   role: UserRole;
+  permissions: PermissionOverrides | null;
   isActive: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -84,7 +88,11 @@ export function createUser(body: {
 
 export function updateUser(
   id: string,
-  body: { role?: UserRole; isActive?: boolean },
+  body: {
+    role?: UserRole;
+    isActive?: boolean;
+    permissions?: PermissionOverrides | null;
+  },
 ) {
   return apiFetch<UserListItem>(`/users/${id}`, {
     method: 'PATCH',

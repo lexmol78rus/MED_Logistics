@@ -12,6 +12,7 @@ enum UserRole {
   ADMIN
   MANAGER
   OPERATOR
+  ACCOUNTANT
   VIEWER
 }
 
@@ -81,6 +82,7 @@ model User {
   displayName  String?   @map("display_name")
   passwordHash String    @map("password_hash")
   role         UserRole  @default(OPERATOR)
+  permissions  Json?
   isActive     Boolean   @default(true) @map("is_active")
   deletedAt    DateTime? @map("deleted_at")
   lastLoginAt  DateTime? @map("last_login_at")

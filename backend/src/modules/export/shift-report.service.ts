@@ -30,6 +30,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   ADMIN: 'Администратор',
   MANAGER: 'Менеджер',
   OPERATOR: 'Оператор склада',
+  ACCOUNTANT: 'Бухгалтер',
   VIEWER: 'Наблюдатель',
 };
 

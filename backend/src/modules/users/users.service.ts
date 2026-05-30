@@ -4,8 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { UserRole } from '@prisma/client';
+import { Prisma, UserRole } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
+import {
+  sanitizePermissionOverrides,
+  type PermissionOverrides,
+} from '../../common/rbac/permission-catalog';
 import { notDeletedUserWhere } from '../../common/utils/not-deleted-user';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
@@ -20,16 +24,22 @@ export class UsersService {
     private readonly audit: AuditLogService,
   ) {}
 
-  findById(id: string) {
-    return this.prisma.user.findFirst({
+  async findById(id: string) {
+    const user = await this.prisma.user.findFirst({
       where: { id, ...notDeletedUserWhere },
       select: {
         id: true,
         email: true,
         role: true,
         isActive: true,
+        permissions: true,
       },
     });
+    if (!user) return null;
+    return {
+      ...user,
+      permissions: sanitizePermissionOverrides(user.permissions),
+    };
   }
 
   findByEmailForAuth(email: string) {
@@ -39,6 +49,7 @@ export class UsersService {
         id: true,
         email: true,
         role: true,
+        permissions: true,
         isActive: true,
         passwordHash: true,
       },
@@ -70,6 +81,7 @@ export class UsersService {
           email: true,
           displayName: true,
           role: true,
+          permissions: true,
           isActive: true,
           lastLoginAt: true,
           createdAt: true,
@@ -85,6 +97,7 @@ export class UsersService {
         email: u.email,
         displayName: u.displayName,
         role: u.role,
+        permissions: sanitizePermissionOverrides(u.permissions),
         isActive: u.isActive,
         lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
         createdAt: u.createdAt.toISOString(),
@@ -143,6 +156,11 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
+    let permissionsPatch: PermissionOverrides | null | undefined;
+    if (dto.permissions !== undefined) {
+      permissionsPatch = sanitizePermissionOverrides(dto.permissions);
+    }
+
     const user = await this.prisma.user.update({
       where: { id },
       data: {
@@ -151,12 +169,21 @@ export class UsersService {
           : {}),
         ...(dto.role !== undefined ? { role: dto.role } : {}),
         ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        ...(permissionsPatch !== undefined
+          ? {
+              permissions:
+                permissionsPatch === null
+                  ? Prisma.DbNull
+                  : (permissionsPatch as Prisma.InputJsonValue),
+            }
+          : {}),
       },
       select: {
         id: true,
         email: true,
         displayName: true,
         role: true,
+        permissions: true,
         isActive: true,
         lastLoginAt: true,
         updatedAt: true,
@@ -170,6 +197,16 @@ export class UsersService {
         entityType: 'user',
         entityId: id,
         metadata: { from: existing.role, to: dto.role, email: existing.email },
+      });
+    }
+
+    if (permissionsPatch !== undefined) {
+      await this.audit.write({
+        actorId,
+        action: 'user.permissions_change',
+        entityType: 'user',
+        entityId: id,
+        metadata: { email: existing.email },
       });
     }
 
@@ -194,7 +231,12 @@ export class UsersService {
       });
     }
 
-    return user;
+    return {
+      ...user,
+      permissions: sanitizePermissionOverrides(user.permissions),
+      lastLoginAt: user.lastLoginAt?.toISOString() ?? null,
+      updatedAt: user.updatedAt.toISOString(),
+    };
   }
 
   async resetPassword(id: string, password: string, actorId: string) {

@@ -230,13 +230,18 @@ export default function Products() {
           const product = params.data?.product;
           if (!product) return null;
           const holds = product.assemblyHolds ?? [];
+          const reservedQty = product.assemblyReservedQty ?? holds.reduce((sum, h) => sum + h.quantity, 0);
+          const showHoldBadge = reservedQty > 0 && holds.length > 0;
           return (
-            <div className="flex items-center justify-center gap-1">
-              <ProductStatusBadge status={String(product.status ?? '')} />
-              <ProductAssemblyHoldBadge
-                holds={holds}
-                reservedQty={product.assemblyReservedQty}
-              />
+            <div className="flex h-full w-full items-center justify-center">
+              <div className="relative inline-flex shrink-0 items-center">
+                <ProductStatusBadge status={String(product.status ?? '')} />
+                {showHoldBadge ? (
+                  <span className="absolute left-1/2 top-1/2 -translate-y-1/2 ml-2.5">
+                    <ProductAssemblyHoldBadge holds={holds} reservedQty={product.assemblyReservedQty} />
+                  </span>
+                ) : null}
+              </div>
             </div>
           );
         },

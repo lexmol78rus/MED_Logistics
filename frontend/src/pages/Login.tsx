@@ -7,6 +7,7 @@ import { loginWithCredentials } from '../lib/api/auth';
 import { PASSWORD_MIN_LENGTH } from '../lib/passwordPolicy';
 import { isJwtValid } from '../lib/auth/jwt';
 import { useAuthStore } from '../stores/authStore';
+import { useRoleTemplatesStore } from '../stores/roleTemplatesStore';
 import { useUserStore } from '../stores/userStore';
 
 export default function Login() {
@@ -14,6 +15,7 @@ export default function Login() {
   const location = useLocation();
   const setTokens = useAuthStore((state) => state.setTokens);
   const setUser = useUserStore((state) => state.setUser);
+  const setRoleTemplates = useRoleTemplatesStore((state) => state.setTemplates);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +40,11 @@ export default function Login() {
           userId: tokens.user.id,
           email: tokens.user.email,
           role: tokens.user.role,
+          permissions: tokens.user.permissions ?? null,
         });
+      }
+      if (tokens.roleTemplates) {
+        setRoleTemplates(tokens.roleTemplates);
       }
       navigate(redirectTo, { replace: true });
     } catch (err) {

@@ -16,16 +16,21 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UsersQueryDto } from './dto/users-query.dto';
+import { RolePermissionsService } from '../role-permissions/role-permissions.service';
 import { UsersService } from './users.service';
 
 @Controller('users')
 export class UsersController {
-  constructor(private readonly users: UsersService) {}
+  constructor(
+    private readonly users: UsersService,
+    private readonly rolePermissions: RolePermissionsService,
+  ) {}
 
   @Roles(...READ_ROLES)
   @Get('me')
-  getAuthenticatedProfile(@CurrentUser() user: JwtUser) {
-    return { user };
+  async getAuthenticatedProfile(@CurrentUser() user: JwtUser) {
+    const roleTemplates = await this.rolePermissions.getTemplates();
+    return { user, roleTemplates };
   }
 
   @Roles(...ADMIN_MANAGER)

@@ -18,6 +18,7 @@ import WriteOff from './pages/WriteOff';
 import ExpiryControl from './pages/ExpiryControl';
 import RecallManagement from './pages/RecallManagement';
 import Settings from './pages/Settings';
+import AccessSettings from './pages/AccessSettings';
 import WriteOffDestinations from './pages/WriteOffDestinations';
 import Users from './pages/Users';
 import Audit from './pages/Audit';
@@ -65,6 +66,7 @@ export default function App() {
                 <Route path="/counterparties/legal-entities" element={<LegalEntities />} />
                 <Route path="/settings" element={<Settings />} />
                 <Route path="/settings/writeoff-destinations" element={<WriteOffDestinations />} />
+                <Route path="/settings/access" element={<AccessSettings />} />
                 <Route path="/users" element={<Users />} />
                 <Route path="/audit" element={<Audit />} />
               </Route>

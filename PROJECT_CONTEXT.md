@@ -34,13 +34,13 @@ MED_Logistics/
   - Формат имени: `<db>_<UTC-timestamp>.sql.gz`, пример: `med_warehouse_20260528T104456Z.sql.gz`
 - **Исторические копии (в репозитории)**: `backup/` (может включать .sql/.sql.gz, см. `backup/README.md`)
 
-### Актуальный бекап за 2026-05-29
+### Актуальный бекап за 2026-05-30
 
-- **Архив кода на сервере**: `/home/adminmed/backups/2026-05-29/MED_Logistics_2026-05-29_20260529T140654Z.tar.gz`
-- **Дамп БД (копия в репозитории)**: `backup/med_warehouse_prod_2026-05-29_20260529T140654Z.sql.gz`
-- **Git ветка бекапа**: `backup/2026-05-29`
+- **Архив кода на сервере**: `/home/adminmed/backups/2026-05-30/MED_Logistics_2026-05-30_20260530T112106Z.tar.gz`
+- **Дамп БД (копия в репозитории)**: `backup/med_warehouse_prod_2026-05-30_20260530T112106Z.sql.gz`
+- **Git ветка бекапа**: `backup/2026-05-30`
 
-Предыдущий снимок: `backup/2-2026-05-28`, `2_med_warehouse_prod_2026-05-28_20260528T174122Z.sql.gz`.
+Предыдущий снимок: `backup/2026-05-29`, `med_warehouse_prod_2026-05-29_20260529T140654Z.sql.gz`.
 
 ## Backend (NestJS)
 

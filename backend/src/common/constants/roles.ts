@@ -5,6 +5,7 @@ export const ALL_ROLES: UserRole[] = [
   UserRole.ADMIN,
   UserRole.MANAGER,
   UserRole.OPERATOR,
+  UserRole.ACCOUNTANT,
   UserRole.VIEWER,
 ];
 

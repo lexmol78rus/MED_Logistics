@@ -1,6 +1,7 @@
 import { apiBaseUrl } from '../../config/env';
 import { refreshTokens } from './auth';
 import { useAuthStore } from '../../stores/authStore';
+import { useRoleTemplatesStore } from '../../stores/roleTemplatesStore';
 import { useUserStore } from '../../stores/userStore';
 import type { ApiErrorBody } from '../../types/api';
 import { clampPageSize } from '../pagination';
@@ -37,7 +38,11 @@ async function tryRefreshSession(): Promise<boolean> {
             userId: tokens.user.id,
             email: tokens.user.email,
             role: tokens.user.role,
+            permissions: tokens.user.permissions ?? null,
           });
+        }
+        if (tokens.roleTemplates) {
+          useRoleTemplatesStore.getState().setTemplates(tokens.roleTemplates);
         }
         return true;
       })

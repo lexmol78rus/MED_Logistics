@@ -2,6 +2,7 @@
 
 | Файл | Дата | Описание |
 |------|------|----------|
+| `med_warehouse_prod_2026-05-30_20260530T112106Z.sql.gz` | 2026-05-30 | Полный дамп production (RBAC permissions, role templates, accountant role, per-user permission overrides). Локальный архив кода: `/home/adminmed/backups/2026-05-30/MED_Logistics_2026-05-30_20260530T112106Z.tar.gz`. Git: `backup/2026-05-30`. |
 | `med_warehouse_prod_2026-05-29_20260529T140654Z.sql.gz` | 2026-05-29 | Полный дамп production (shipments assembly/reservations, product GTIN, product names catalog, GS1 scan). Локальный архив кода: `/home/adminmed/backups/2026-05-29/MED_Logistics_2026-05-29_20260529T140654Z.tar.gz`. Git: `backup/2026-05-29`. |
 | `2_med_warehouse_prod_2026-05-28_20260528T174122Z.sql.gz` | 2026-05-28 | Полный дамп production **перед** очисткой Docker cache (shipments, counterparties, picking/writeoff). Локальный архив кода: `/home/adminmed/backups/2026-05-28/2_MED_Logistics_2026-05-28_20260528T174122Z.tar.gz`. Git: `backup/2-2026-05-28`. |
 | `med_warehouse_prod_2026-05-25_pre-nomenclature-clean.sql` | 2026-05-25 | Полный дамп production **перед** первой очисткой (17 products, 71 movements, …). |

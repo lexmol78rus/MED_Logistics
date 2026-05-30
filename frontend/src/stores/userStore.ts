@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import type { UserRole } from '../lib/rbac/permissions';
+import type { PermissionOverrides, UserRole } from '../lib/rbac/permissions';
 
 export type CurrentUser = {
   userId: string;
   email: string;
   role: UserRole;
+  permissions: PermissionOverrides | null;
 };
 
 type UserState = {

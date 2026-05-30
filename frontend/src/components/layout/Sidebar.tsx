@@ -25,6 +25,7 @@ import { logoutApi } from '../../lib/api/auth';
 import { canAccessRoute, ROLE_BADGE_CLASS, ROLE_LABELS } from '../../lib/rbac/permissions';
 import { userInitials } from '../../lib/api/users';
 import { useAuthStore } from '../../stores/authStore';
+import { useRoleTemplatesStore } from '../../stores/roleTemplatesStore';
 import { useUserStore } from '../../stores/userStore';
 import { loadSettings } from '../../lib/settings/storage';
 import {
@@ -83,6 +84,7 @@ export default function Sidebar() {
   const clearAuth = useAuthStore((s) => s.clearAuth);
   const clearUser = useUserStore((s) => s.clearUser);
   const user = useUserStore((s) => s.user);
+  const roleTemplates = useRoleTemplatesStore((s) => s.templates);
   const [openGroup, setOpenGroup] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(readSidebarCollapsed);
   const noAnim = loadSettings().uiAnimations === false;
@@ -115,7 +117,7 @@ export default function Sidebar() {
         return null;
       })
       .filter(Boolean) as NavItem[];
-  }, [user]);
+  }, [user, roleTemplates]);
 
   const opsItems = visibleItems.filter((i) => i.section === 'ops');
   const complianceItems = visibleItems.filter((i) => i.section === 'compliance');

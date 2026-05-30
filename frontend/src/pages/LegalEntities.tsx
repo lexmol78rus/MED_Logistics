@@ -1,9 +1,19 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import ConfirmDialog from '../components/ops/ConfirmDialog';
 import { ApiError } from '../lib/api/client';
 import {
   createCounterparty,
+  deleteCounterparty,
   fetchCounterparties,
   updateCounterparty,
   type Counterparty,
@@ -30,6 +40,9 @@ export default function LegalEntities() {
   const [editFullName, setEditFullName] = useState('');
   const [editShortName, setEditShortName] = useState('');
   const [editInn, setEditInn] = useState('');
+
+  const [deleteTarget, setDeleteTarget] = useState<Counterparty | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -142,6 +155,26 @@ export default function LegalEntities() {
     }
   };
 
+  const requestDelete = (c: Counterparty) => {
+    setDeleteTarget(c);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    deleteCounterparty(deleteTarget.id)
+      .then((res) => {
+        const parts: string[] = ['Юр. лицо удалено'];
+        if (res.detachedShipments > 0) parts.push(`отгрузок без юр. лица: ${res.detachedShipments}`);
+        toast.success(parts.join(' · '));
+        if (editing?.id === deleteTarget.id) closeEdit();
+        setDeleteTarget(null);
+        return load();
+      })
+      .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить'))
+      .finally(() => setDeleting(false));
+  };
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -170,33 +203,70 @@ export default function LegalEntities() {
           />
         </div>
 
-        <div className="px-3 py-2 border-b text-[10px] font-bold uppercase text-slate-500 tracking-wider grid grid-cols-12 gap-2">
-          <div className="col-span-5">Полное наименование</div>
-          <div className="col-span-4">Краткое</div>
-          <div className="col-span-2 text-right">ИНН</div>
-          <div className="col-span-1 text-right">Действия</div>
-        </div>
-        <div className="divide-y max-h-[70vh] overflow-auto">
-          {items.map((x) => (
-            <div key={x.id} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm items-center">
-              <div className="col-span-5 min-w-0">
-                <div className="text-slate-900 truncate" title={x.fullName || ''}>
-                  {x.fullName || '—'}
-                </div>
-              </div>
-              <div className="col-span-4 min-w-0 font-semibold text-slate-900 truncate" title={x.shortName}>
-                {x.name}
-              </div>
-              <div className="col-span-2 text-right font-mono text-xs text-slate-700">{x.inn || '—'}</div>
-              <div className="col-span-1 flex justify-end">
-                <Button type="button" variant="outline" size="sm" className="h-7 text-[10px] font-semibold" onClick={() => openEdit(x)}>
-                  Редактировать
-                </Button>
-              </div>
-            </div>
-          ))}
+        <div className="max-h-[70vh] overflow-auto">
+          <Table className="table-fixed">
+            <TableHeader>
+              <TableRow className="bg-slate-50/80 hover:bg-slate-50/80 border-b">
+                <TableHead className="h-9 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 w-[35%]">
+                  Полное наименование
+                </TableHead>
+                <TableHead className="h-9 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 w-[27%]">
+                  Краткое
+                </TableHead>
+                <TableHead className="h-9 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right w-[16%]">
+                  ИНН
+                </TableHead>
+                <TableHead className="h-9 px-3 text-[10px] font-bold uppercase tracking-wider text-slate-500 text-right w-[22%] min-w-[11rem]">
+                  Действия
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.map((x) => (
+                <TableRow key={x.id} className="text-sm">
+                  <TableCell className="px-3 py-2.5 align-middle whitespace-normal max-w-0">
+                    <div className="text-slate-900 truncate" title={x.fullName || ''}>
+                      {x.fullName || '—'}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-2.5 align-middle whitespace-normal max-w-0">
+                    <div className="font-semibold text-slate-900 truncate" title={x.name}>
+                      {x.name}
+                    </div>
+                  </TableCell>
+                  <TableCell className="px-3 py-2.5 align-middle text-right font-mono text-xs tabular-nums text-slate-700">
+                    {x.inn || '—'}
+                  </TableCell>
+                  <TableCell className="px-3 py-2.5 align-middle text-right">
+                    <div className="flex flex-wrap justify-end gap-1.5">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 shrink-0 text-[10px] font-semibold"
+                        onClick={() => openEdit(x)}
+                      >
+                        Редактировать
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive"
+                        size="sm"
+                        className="h-7 shrink-0 text-[10px] font-semibold"
+                        onClick={() => requestDelete(x)}
+                      >
+                        Удалить
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
 
-          {items.length === 0 && <div className="p-4 text-sm text-slate-600">{loading ? 'Загрузка...' : 'Пока нет юрлиц'}</div>}
+          {items.length === 0 && (
+            <div className="p-4 text-sm text-slate-600 border-t">{loading ? 'Загрузка...' : 'Пока нет юрлиц'}</div>
+          )}
         </div>
       </div>
 
@@ -274,6 +344,20 @@ export default function LegalEntities() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title="Удалить юр. лицо?"
+        message={
+          deleteTarget
+            ? `Будет удалено «${deleteTarget.name}». Отгрузки в архиве останутся в системе, но без привязки к этому юр. лицу. Удаление невозможно, если есть активные отгрузки (новые, в сборке или ожидают списания).`
+            : ''
+        }
+        confirmLabel="Удалить"
+        confirmDisabled={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
 
       {editOpen && editing && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

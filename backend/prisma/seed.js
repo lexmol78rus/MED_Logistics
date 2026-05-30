@@ -9,6 +9,7 @@ const SEED_USERS = [
   { email: 'admin@med.local', role: UserRole.ADMIN },
   { email: 'manager@med.local', role: UserRole.MANAGER },
   { email: 'operator@med.local', role: UserRole.OPERATOR },
+  { email: 'accountant@med.local', role: UserRole.ACCOUNTANT },
   { email: 'viewer@med.local', role: UserRole.VIEWER },
 ];
 

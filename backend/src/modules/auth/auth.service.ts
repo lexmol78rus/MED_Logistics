@@ -13,6 +13,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditLogService } from '../audit/audit-log.service';
 import { MailConfigService } from '../mail/mail-config.service';
 import { MailService } from '../mail/mail.service';
+import { sanitizePermissionOverrides } from '../../common/rbac/permission-catalog';
+import { RolePermissionsService } from '../role-permissions/role-permissions.service';
 import { UsersService } from '../users/users.service';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { LoginDto } from './dto/login.dto';
@@ -36,6 +38,7 @@ export class AuthService {
     private readonly audit: AuditLogService,
     private readonly mail: MailService,
     private readonly mailConfig: MailConfigService,
+    private readonly rolePermissions: RolePermissionsService,
   ) {}
 
   async login(dto: LoginDto): Promise<LoginResponseDto> {
@@ -93,6 +96,8 @@ export class AuthService {
       }),
     ]);
 
+    const roleTemplates = await this.rolePermissions.getTemplates();
+
     return {
       accessToken,
       refreshToken,
@@ -100,7 +105,9 @@ export class AuthService {
         id: user.id,
         email: user.email,
         role: user.role,
+        permissions: sanitizePermissionOverrides(user.permissions),
       },
+      roleTemplates,
     };
   }
 
@@ -114,6 +121,7 @@ export class AuthService {
             id: true,
             email: true,
             role: true,
+            permissions: true,
             isActive: true,
             deletedAt: true,
           },
@@ -142,6 +150,8 @@ export class AuthService {
       this.issueAndPersistRefreshToken(stored.user.id),
     ]);
 
+    const roleTemplates = await this.rolePermissions.getTemplates();
+
     return {
       accessToken,
       refreshToken,
@@ -149,7 +159,9 @@ export class AuthService {
         id: stored.user.id,
         email: stored.user.email,
         role: stored.user.role,
+        permissions: sanitizePermissionOverrides(stored.user.permissions),
       },
+      roleTemplates,
     };
   }
 

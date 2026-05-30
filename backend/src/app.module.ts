@@ -31,6 +31,7 @@ import { ProductRuModule } from './modules/product-ru/product-ru.module';
 import { CounterpartiesModule } from './modules/counterparties/counterparties.module';
 import { ShipmentsModule } from './modules/shipments/shipments.module';
 import { ProductNamesModule } from './modules/product-names/product-names.module';
+import { RolePermissionsModule } from './modules/role-permissions/role-permissions.module';
 
 @Module({
   imports: [
@@ -91,6 +92,7 @@ import { ProductNamesModule } from './modules/product-names/product-names.module
     CounterpartiesModule,
     ShipmentsModule,
     ProductNamesModule,
+    RolePermissionsModule,
   ],
   providers: [
     {

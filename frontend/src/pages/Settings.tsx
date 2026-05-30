@@ -8,6 +8,7 @@ import {
   LayoutGrid,
   ScanLine,
   Settings2,
+  Shield,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,7 @@ import { ApiError } from '../lib/api/client';
 import {
   canAdminShiftReport,
   canEditFefoSettings,
+  canManageAccessSettings,
   canManageFullWarehouseSettings,
   canManageWriteoffDestinations,
 } from '../lib/rbac/permissions';
@@ -56,6 +58,7 @@ import {
 export default function Settings() {
   const role = useUserStore((s) => s.user?.role ?? null);
   const fullAccess = canManageFullWarehouseSettings(role);
+  const showAccessSettings = canManageAccessSettings(role);
   const showShiftReports = canAdminShiftReport(role);
   const showWriteoffDestinations = canManageWriteoffDestinations(role);
   const showFefo = canEditFefoSettings(role);
@@ -143,6 +146,31 @@ export default function Settings() {
       </header>
 
       {showShiftReports && <AdminShiftReportCard />}
+
+      {showAccessSettings && (
+      <Card className={settingsCardClass}>
+        <CardContent className={`${settingsCardBodyClass} flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between`}>
+          <div className="flex min-w-0 flex-1 gap-3.5">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-700">
+              <Shield className="h-4 w-4" strokeWidth={2} />
+            </div>
+            <div className="min-w-0">
+              <h2 className="text-sm font-semibold text-slate-900">Права доступа</h2>
+              <p className="mt-1 text-sm leading-relaxed text-slate-500">
+                Шаблоны прав для ролей и индивидуальные отклонения у пользователей — по разделам,
+                без длинного списка галочек.
+              </p>
+            </div>
+          </div>
+          <Link to="/settings/access" className="shrink-0 sm:ml-4">
+            <Button variant="outline" className="h-9 gap-1.5 border-slate-200 text-sm font-medium">
+              Настроить права
+              <ChevronRight className="h-4 w-4 text-slate-400" />
+            </Button>
+          </Link>
+        </CardContent>
+      </Card>
+      )}
 
       {fullAccess && (
       <Card className={settingsCardClass}>

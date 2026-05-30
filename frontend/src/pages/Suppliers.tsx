@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
+import ConfirmDialog from '../components/ops/ConfirmDialog';
 import { ApiError } from '../lib/api/client';
 import {
   createCounterparty,
+  deleteCounterparty,
   fetchCounterparties,
   updateCounterparty,
   type Counterparty,
@@ -26,6 +28,9 @@ export default function Suppliers() {
   const [editFullName, setEditFullName] = useState('');
   const [editShortName, setEditShortName] = useState('');
   const [editInn, setEditInn] = useState('');
+
+  const [deleteTarget, setDeleteTarget] = useState<Counterparty | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -138,6 +143,27 @@ export default function Suppliers() {
     }
   };
 
+  const requestDelete = (c: Counterparty) => {
+    setDeleteTarget(c);
+  };
+
+  const confirmDelete = () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    deleteCounterparty(deleteTarget.id)
+      .then((res) => {
+        const parts: string[] = ['Поставщик удалён'];
+        if (res.removedContracts > 0) parts.push(`контрактов: ${res.removedContracts}`);
+        if (res.detachedShipments > 0) parts.push(`отгрузок без привязки: ${res.detachedShipments}`);
+        toast.success(parts.join(' · '));
+        if (editing?.id === deleteTarget.id) closeEditModal();
+        setDeleteTarget(null);
+        return load();
+      })
+      .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Не удалось удалить поставщика'))
+      .finally(() => setDeleting(false));
+  };
+
   return (
     <div className="p-4">
       <div className="flex items-center justify-between gap-3 mb-4">
@@ -177,9 +203,26 @@ export default function Suppliers() {
                 <div className="font-semibold text-slate-900 truncate">{c.name}</div>
                 <div className="text-[11px] text-slate-500">ИНН: {c.inn ?? '—'}</div>
               </div>
-              <Button type="button" variant="outline" size="sm" className="h-7 text-[10px] font-semibold" onClick={() => openEditModal(c)}>
-                Редактировать
-              </Button>
+              <div className="flex shrink-0 flex-wrap justify-end gap-1.5">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-[10px] font-semibold"
+                  onClick={() => openEditModal(c)}
+                >
+                  Редактировать
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  size="sm"
+                  className="h-7 text-[10px] font-semibold"
+                  onClick={() => requestDelete(c)}
+                >
+                  Удалить
+                </Button>
+              </div>
             </div>
           ))}
           {items.length === 0 && (
@@ -264,6 +307,20 @@ export default function Suppliers() {
           </div>
         </div>
       )}
+
+      <ConfirmDialog
+        open={deleteTarget != null}
+        title="Удалить поставщика?"
+        message={
+          deleteTarget
+            ? `Будет удалён «${deleteTarget.name}». Удаление невозможно, если поставщик указан в активных отгрузках (новые, в сборке или ожидают списания).`
+            : ''
+        }
+        confirmLabel="Удалить"
+        confirmDisabled={deleting}
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+      />
 
       {editOpen && editing && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">

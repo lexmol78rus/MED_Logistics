@@ -12,14 +12,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Plus, Search, Users as UsersIcon } from 'lucide-react';
+import { RoleSelect } from '../components/RoleSelect';
 import { toast } from 'sonner';
 import ConfirmDialog from '../components/ops/ConfirmDialog';
 import {
@@ -33,7 +27,7 @@ import {
   type UserListItem,
 } from '../lib/api/users';
 import type { UserRole } from '../lib/rbac/permissions';
-import { ROLE_LABELS } from '../lib/rbac/permissions';
+import { USER_ROLES } from '../lib/rbac/permissions';
 import { ApiError } from '../lib/api/client';
 import {
   isWeakPassword,
@@ -52,8 +46,6 @@ import {
 } from '../lib/agGrid/gridPreset';
 import { MAX_PAGE_SIZE } from '../lib/pagination';
 import { formatAppDateTime } from '../lib/datetime';
-
-const ROLES: UserRole[] = ['ADMIN', 'MANAGER', 'OPERATOR', 'VIEWER'];
 
 export default function Users() {
   const currentUser = useUserStore((s) => s.user);
@@ -155,7 +147,7 @@ export default function Users() {
               onChange={(e) => void handleRoleChange(user, e.target.value as UserRole)}
               disabled={user.id === currentUser?.userId}
             >
-              {ROLES.map((r) => (
+              {USER_ROLES.map((r) => (
                 <option key={r} value={r}>
                   {roleLabel(r)}
                 </option>
@@ -404,18 +396,7 @@ export default function Users() {
             </div>
             <div>
               <Label>Роль</Label>
-              <Select value={newRole} onValueChange={(v) => setNewRole(v as UserRole)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {ROLE_LABELS[r]}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <RoleSelect value={newRole} onValueChange={setNewRole} triggerClassName="w-full" />
             </div>
             <label className="flex items-center gap-2 text-sm">
               <input

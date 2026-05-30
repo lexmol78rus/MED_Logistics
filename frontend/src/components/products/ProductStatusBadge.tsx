@@ -50,10 +50,8 @@ export function ProductStatusBadge({ status }: { status: string }) {
   const { colorClass, title } = resolveProductStatusIndicator(status);
 
   return (
-    <div className="flex h-full w-full items-center justify-center" role="img" aria-label={title}>
-      <HoverHint tip={title}>
-        <span className={`${INDICATOR_CLASS} ${colorClass}`} />
-      </HoverHint>
-    </div>
+    <HoverHint tip={title}>
+      <span className={`${INDICATOR_CLASS} ${colorClass}`} role="img" aria-label={title} />
+    </HoverHint>
   );
 }

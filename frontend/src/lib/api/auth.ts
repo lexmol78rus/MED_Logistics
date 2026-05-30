@@ -1,5 +1,6 @@
 import { apiBaseUrl } from '../../config/env';
-import type { UserRole } from '../rbac/permissions';
+import type { RoleTemplatesMap } from '../../stores/roleTemplatesStore';
+import type { PermissionOverrides, UserRole } from '../rbac/permissions';
 
 export type LoginResponse = {
   accessToken?: string;
@@ -10,13 +11,16 @@ export type LoginResponse = {
     id: string;
     email: string;
     role: UserRole;
+    permissions?: PermissionOverrides | null;
   };
+  roleTemplates?: RoleTemplatesMap;
 };
 
 export type AuthTokens = {
   accessToken: string;
   refreshToken: string | null;
   user: LoginResponse['user'];
+  roleTemplates?: RoleTemplatesMap;
 };
 
 export async function loginWithCredentials(
@@ -49,6 +53,7 @@ export async function loginWithCredentials(
     accessToken,
     refreshToken: body.refreshToken ?? body.refresh_token ?? null,
     user: body.user,
+    roleTemplates: body.roleTemplates,
   };
 }
 
@@ -81,6 +86,7 @@ export async function refreshTokens(
     accessToken,
     refreshToken: body.refreshToken ?? body.refresh_token ?? null,
     user: body.user,
+    roleTemplates: body.roleTemplates,
   };
 }
 
